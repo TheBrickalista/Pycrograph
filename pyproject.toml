@@ -1,0 +1,86 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pycrograph"
+version = "0.1.0"
+description = "Non-destructive, provenance-tracked figure builder for fluorescence microscopy images (GPLv3)."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "GPL-3.0-only" }
+authors = [
+  { name = "Etienne Boulter" }
+]
+keywords = [
+  "microscopy",
+  "immunofluorescence",
+  "figure",
+  "MetaMorph",
+  "provenance",
+  "reproducibility",
+  "bioimaging"
+]
+classifiers = [
+  "Development Status :: 2 - Pre-Alpha",
+  "Intended Audience :: Science/Research",
+  "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Scientific/Engineering :: Bio-Informatics",
+  "Topic :: Scientific/Engineering :: Visualization"
+]
+# Same floors as PysternBlot 1.3.0 (see the PySide6 <6.12 note there:
+# 6.12.0 binding modules are built for macOS 26, the app targets macOS 15+).
+# Floors are raised by hand only and must equal the == pins in
+# ci/requirements-min.in (enforced by tests/test_dependency_floors.py).
+dependencies = [
+  "PySide6>=6.11.2,<6.12",
+  "pydantic>=2.6",
+  "numpy>=1.24",
+  "Pillow>=13.0.0",
+  "tifffile>=2023.1.23",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=9.0.3",
+  "pytest-timeout>=2.3.1",
+  "pip-audit>=2.7",
+  "pyyaml>=6.0.1",
+  "pyflakes>=3.2"
+]
+build = [
+  "pyinstaller>=6.21"
+]
+
+[project.urls]
+Homepage = "https://github.com/TheBrickalista/Pycrograph"
+Repository = "https://github.com/TheBrickalista/Pycrograph"
+Issues = "https://github.com/TheBrickalista/Pycrograph/issues"
+
+[project.scripts]
+pycrograph = "pycrograph.main:main"
+
+[tool.setuptools]
+packages = ["pycrograph", "pycrograph.readers", "pycrograph.ui", "pycrograph.resources"]
+
+[tool.setuptools.package-data]
+pycrograph = ["resources/*", "resources/**/*"]
+
+[tool.uv]
+# A floor only (see PysternBlot pyproject.toml for why: Dependabot's bundled uv).
+required-version = ">=0.13.5"
+constraint-dependencies = [
+  "pip>=26.2"
+]
+
+[tool.pytest.ini_options]
+timeout = 120
+testpaths = ["tests"]
+markers = [
+  "sample: needs the real MetaMorph reference file (set PYCROGRAPH_SAMPLE_TIFF)",
+]

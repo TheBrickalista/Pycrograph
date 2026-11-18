@@ -1,0 +1,26 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.DS_Store
+.env
+.venv/
+dist/
+build/
+*.egg-info/
+
+# Local-only AI assistant guidance (architecture lives in docs/ARCHITECTURE.md)
+CLAUDE.md
+
+# Sphinx build output
+docs/_build/
+
+# Signing — never commit certs, keys, or scratch entitlements
+/entitlements.plist
+*.p12
+*.p8
+*.cer
+*.certSigningRequest
+*.pem
+*.key
