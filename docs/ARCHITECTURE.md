@@ -20,6 +20,7 @@ hash-chained operation log, and a PySide6 `QGraphicsView` UI.
 | `models.py` | `Project › Dataset › ImageRef`, `ChannelSettings`, `ImageDisplay`, `Figure` (`PageSetup`, `legend`), `Panel` (`PanelBorder`, `InsetStyle`, `Shape`), `OperationLogEntry`. `PROJECT_FORMAT_VERSION = 2` |
 | `migrations.py` | Raw-dict migrations of `project.json` applied before validation (1 → 2: `Figure.page` `PagePreset` → `PageSetup`) |
 | `figures.py` | Figure editing without Qt: create/rename figures, panels from library images (copy of display settings), move/resize/delete, `FigureEditor` gestures with snapshot undo/redo |
+| `viewport.py` | Viewport = crop (pure geometry): uniform scale, zoom % (100 % = whole image fitted), pan, resize at constant scale, rotation about the crop centre, orientation mapping, where the image sits in its panel |
 | `render.py` | `PanelRenderer`: raw plane(s) or max projection → crop by array slicing → `render_composite` → orientation; LRU cache keyed by source hash + settings |
 | `readers/` | `ImageSource` interface (T, Z, C, Y, X; lazy `get_plane`). `tiff.py`: plain TIFF, MetaMorph TIFF (XML), MetaMorph STK (UIC tags). `metamorph.py`: metadata parsing |
 | `display.py` | window → gamma → invert → LUT → additive composite → RGB8; orientation; saturation; auto-window |
@@ -29,10 +30,11 @@ hash-chained operation log, and a PySide6 `QGraphicsView` UI.
 | `integrity.py` | Integrity report (JSON) — **shared-core** (adapted) |
 | `ui/main_window.py` | Tabs Home · Library · Figures · Preferences · About. Library tab = tree (left) · viewer (centre) · inspector (right); gesture commit |
 | `ui/home_tab.py` | Project list (new / open / archive / restore), figures of the open project |
-| `ui/figures_tab.py`, `ui/figure_canvas.py` | Figure selector, page canvas in mm at journal width, panel items (select, rubber band, move, resize handle), undo/redo, info pane |
+| `ui/figures_tab.py`, `ui/figure_canvas.py` | Figure selector, page canvas in mm at journal width, panel items (select, rubber band, move, resize handle), undo/redo, live-gesture commit, Preview · Info inspector |
+| `ui/panel_inspector.py` | Preview tab: edits all selected panels with mixed states; viewport mini-view, zoom, rotation/flips, T/Z + max projection, channel controls by index, copy/paste rendering and viewport, image defaults, replace image |
 | `ui/info_tabs.py` | Preferences (default page preset, read-only for now) and About |
 | `ui/library_panel.py` | Virtual tree, search/rating filter, metadata, tags / rating / key–values |
-| `ui/channel_controls.py` | One channel: visibility, LUT, histogram gates, Black/White, gamma, invert, saturation |
+| `ui/channel_controls.py` | One channel: visibility, LUT, histogram gates, Black/White, gamma, invert, saturation; mixed state for multi-panel editing |
 | `ui/workers.py` | Background hashing (`QThreadPool`, one file at a time) |
 | `ui/zoomable_graphics_view.py`, `ui/levels_histogram.py` | **shared-core** (verbatim from PysternBlot) |
 
@@ -76,6 +78,17 @@ log entry per panel added / removed / changed (`target_type="panel"`,
 `asset_sha256` = the panel's image), push the (before, after) snapshots on
 the undo stack, save. Undo/redo restore a snapshot and are logged the same
 way (`figure.undo` / `figure.redo`). The undo stack is in memory only.
+
+Continuous controls (sliders, mini-view drag, wheel zoom) use
+`FigureEditor.edit(..., final=False)`: every tick changes the model and
+redraws; the gesture is committed on release, after 700 ms idle, or when
+anything else happens. Log field paths name the changed leaves
+(`channels[1].white`, keyed by channel index; `crop.x`).
+
+The viewport is `Panel.crop` (raw pixels). The panel shows it at one
+uniform scale; the canvas draws only the part of the crop that lies on the
+image, at its proportional place, clipped to the panel — the image is never
+stretched and the rest is page background.
 
 On screen, panels are decimated by an integer stride to at most 1024 px per
 side (no interpolation); export will render at native crop resolution.

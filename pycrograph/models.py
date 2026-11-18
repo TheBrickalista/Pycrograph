@@ -182,9 +182,11 @@ class Dataset(BaseModel):
 
 
 class Crop(BaseModel):
-    """Rectangle in raw-image pixel coordinates (before rotation/flip)."""
-    x: float = Field(ge=0)
-    y: float = Field(ge=0)
+    """Rectangle in raw-image pixel coordinates (before rotation/flip).
+    It may extend past the image (zoomed out, panned to an edge): the part
+    outside is drawn as page background, never padded into the pixels."""
+    x: float
+    y: float
     w: float = Field(gt=0)
     h: float = Field(gt=0)
 

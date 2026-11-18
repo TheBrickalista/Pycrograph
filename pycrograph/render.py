@@ -150,6 +150,15 @@ class PanelRenderer:
         return apply_orientation(rgb, panel.rotation_deg, panel.flip_horizontal,
                                  panel.flip_vertical)
 
+    def crop_plane(self, ref: ImageRef, panel: Panel, channel: int) -> np.ndarray:
+        """The raw cropped plane of one channel (max projection if set), as
+        a private copy: histogram, saturation and Auto levels are computed on
+        what the panel shows (design §4)."""
+        s = ref.metadata.shape
+        bounds = crop_bounds(panel.crop, s.X, s.Y)
+        src = self._source(ref)
+        return np.array(self._plane(src, panel, min(panel.t, s.T - 1), channel, s.Z, bounds))
+
     @staticmethod
     def _plane(src: ImageSource, panel: Panel, t: int, c: int, n_z: int,
                bounds: tuple[int, int, int, int]) -> np.ndarray:

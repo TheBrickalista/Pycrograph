@@ -94,8 +94,11 @@ def test_add_move_resize_delete_log_per_panel(workspace, project_with_images):
     assert len(p.operation_log) == n2
 
     ed.set_geometry({panels[0].id: (0, 0, 20, 20)}, "figure.panel.resize", "Resize")
-    assert p.operation_log[-1].operation == "figure.panel.resize"
-    assert p.operation_log[-1].field == "x_mm,y_mm,width_mm,height_mm"
+    e = p.operation_log[-1]
+    assert e.operation == "figure.panel.resize"
+    # Size + the crop shrunk at constant scale, all in ONE entry.
+    assert e.field.split(",")[:4] == ["x_mm", "y_mm", "width_mm", "height_mm"]
+    assert "crop.w" in e.field and e.new_value["crop.w"] == pytest.approx(32)   # 64 px / 40 mm * 20 mm
 
     n3 = len(p.operation_log)
     assert ed.delete_panels([q.id for q in panels]) == 2

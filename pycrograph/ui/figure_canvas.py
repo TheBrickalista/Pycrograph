@@ -13,8 +13,12 @@ Interaction
 -----------
 - click / Ctrl- or Shift-click / rubber band (drag on empty page) / Ctrl+A
   select; drag moves every selected panel; the bottom-right handle of a
-  selected panel resizes it, keeping its image aspect ratio (the crop is
-  not changed in this step; viewport editing comes with the Preview tab).
+  selected panel resizes it freely (Shift: keep the aspect ratio). A resize
+  extends or shrinks the crop at constant scale (viewport.resize): the
+  image is never rescaled or stretched.
+- The image is drawn at ONE uniform scale into `image_rect` (panel-local
+  mm, from viewport.image_rect_mm), clipped to the panel; where the crop
+  runs off the image the page background shows.
 - Positions and sizes snap to the page grid when PageSetup.snap is on.
 - Ctrl/Cmd + wheel zooms, middle-drag (or wheel) scrolls, double-click on
   empty space fits the pages.
@@ -44,8 +48,10 @@ HANDLE_PX = 9.0
 SELECT_COLOR = QColor("#2563eb")
 CANVAS_BG = QColor("#9ca3af")
 
-# (pixmap or None, message shown when there is no pixmap)
-PixmapProvider = Callable[[Panel], tuple[Optional[QPixmap], str]]
+# (pixmap or None, message shown when there is no pixmap,
+#  where the pixmap goes in panel-local mm: (x, y, w, h) or None = whole panel)
+PanelVisual = tuple[Optional[QPixmap], str, Optional[tuple[float, float, float, float]]]
+PixmapProvider = Callable[[Panel], PanelVisual]
 CommitCallback = Callable[[dict[str, Geometry], str], None]
 
 
@@ -55,15 +61,12 @@ def page_offset_mm(figure: Figure, page: int) -> float:
 
 
 class PanelItem(QGraphicsRectItem):
-    def __init__(self, panel: Panel, figure: Figure, pixmap: Optional[QPixmap], message: str,
-                 aspect: float):
+    def __init__(self, panel: Panel, figure: Figure, visual: PanelVisual):
         super().__init__(0, 0, panel.width_mm, panel.height_mm)
         self.panel_id = panel.id
         self.page = panel.page
         self._figure = figure
-        self._pixmap = pixmap
-        self._message = message
-        self._aspect = aspect if aspect > 0 else panel.width_mm / panel.height_mm
+        self.set_visual(visual)
         self._resizing = False
         self._press_size: tuple[float, float] = (0.0, 0.0)
         self._press_scene = QPointF()
@@ -72,6 +75,25 @@ class PanelItem(QGraphicsRectItem):
         self.setAcceptHoverEvents(True)
         self.setPos(panel.x_mm, panel.y_mm + page_offset_mm(figure, panel.page))
         self.setPen(Qt.NoPen)
+
+    def set_visual(self, visual: PanelVisual) -> None:
+        self._pixmap, self._message, rect = visual
+        self._image_rect = QRectF(*rect) if rect is not None else None
+        self._image_shift = QPointF()          # live resize: centre-keeping offset
+        self.update()
+
+    def sync(self, panel: Panel, visual: PanelVisual) -> None:
+        """Follow the model (after an inspector edit) without re-creating."""
+        self.prepareGeometryChange()
+        self.setRect(0, 0, panel.width_mm, panel.height_mm)
+        self.setFlag(QGraphicsItem.ItemSendsGeometryChanges, False)
+        self.setPos(panel.x_mm, panel.y_mm + page_offset_mm(self._figure, panel.page))
+        self.setFlag(QGraphicsItem.ItemSendsGeometryChanges, True)
+        self.set_visual(visual)
+
+    @property
+    def image_rect(self) -> Optional[QRectF]:
+        return self._image_rect.translated(self._image_shift) if self._image_rect else None
 
     # ---- geometry in page mm ---------------------------------------------
     def geometry_mm(self) -> Geometry:
@@ -102,8 +124,12 @@ class PanelItem(QGraphicsRectItem):
               widget: Optional[QWidget] = None) -> None:
         r = self.rect()
         if self._pixmap is not None and not self._pixmap.isNull():
+            painter.save()
+            painter.setClipRect(r)
             painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
-            painter.drawPixmap(r, self._pixmap, QRectF(self._pixmap.rect()))
+            target = self.image_rect if self._image_rect is not None else r
+            painter.drawPixmap(target, self._pixmap, QRectF(self._pixmap.rect()))
+            painter.restore()
         else:
             painter.fillRect(r, QColor("#e5e7eb"))
             painter.setPen(QPen(QColor("#b91c1c"), 0))
@@ -152,11 +178,15 @@ class PanelItem(QGraphicsRectItem):
             return
         d = event.scenePos() - self._press_scene
         w0, h0 = self._press_size
-        # Follow whichever axis the pointer moved more, keep the aspect ratio.
-        w = max(w0 + d.x(), (h0 + d.y()) * self._aspect)
-        w = max(MIN_PANEL_MM, self._snap(w))
+        w = max(MIN_PANEL_MM, self._snap(w0 + d.x()))
+        h = max(MIN_PANEL_MM, self._snap(h0 + d.y()))
+        if event.modifiers() & Qt.ShiftModifier:          # keep the aspect ratio
+            k = max(w / w0, h / h0)
+            w, h = max(MIN_PANEL_MM, w0 * k), max(MIN_PANEL_MM, h0 * k)
         self.prepareGeometryChange()
-        self.setRect(0, 0, w, w / self._aspect)
+        self.setRect(0, 0, w, h)
+        # Constant scale, crop centre kept: the image moves by half the growth.
+        self._image_shift = QPointF((w - w0) / 2.0, (h - h0) / 2.0)
         event.accept()
 
     def mouseReleaseEvent(self, event) -> None:
@@ -232,7 +262,6 @@ class FigureCanvas(QGraphicsView):
 
     # ---- content ---------------------------------------------------------
     def set_figure(self, figure: Optional[Figure], provider: Optional[PixmapProvider] = None,
-                   aspect: Optional[Callable[[Panel], float]] = None,
                    selected: Optional[set[str]] = None) -> None:
         sc = self._scene
         sc.blockSignals(True)
@@ -250,9 +279,7 @@ class FigureCanvas(QGraphicsView):
                 page.setData(0, f"page:{i}")
                 sc.addItem(page)
             for z, panel in enumerate(figure.panels):
-                pm, msg = provider(panel) if provider else (None, "")
-                item = PanelItem(panel, figure, pm, msg,
-                                 aspect(panel) if aspect else panel.width_mm / panel.height_mm)
+                item = PanelItem(panel, figure, provider(panel) if provider else (None, "", None))
                 item.setZValue(z)
                 sc.addItem(item)
                 if selected and panel.id in selected:
@@ -264,6 +291,21 @@ class FigureCanvas(QGraphicsView):
         self._emit_selection()
         if self._fit_mode:
             self.fit_pages()
+
+    def update_items(self, provider: PixmapProvider, panel_ids=None) -> bool:
+        """Re-sync items with the model in place (inspector edits). Returns
+        False when the panel set changed and a full set_figure is needed."""
+        fig = self._scene.figure
+        if fig is None:
+            return False
+        items = {it.panel_id: it for it in self._scene.panel_items()}
+        if set(items) != {p.id for p in fig.panels}:
+            return False
+        wanted = set(panel_ids) if panel_ids is not None else set(items)
+        for panel in fig.panels:
+            if panel.id in wanted:
+                items[panel.id].sync(panel, provider(panel))
+        return True
 
     def selected_ids(self) -> list[str]:
         return [it.panel_id for it in self._scene.panel_items() if it.isSelected()]
