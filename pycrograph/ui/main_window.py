@@ -132,6 +132,7 @@ class MainWindow(QMainWindow):
         self.figures_tab = FiguresTab(self.renderer, save=self.save,
                                       before_gesture=self.flush_pending)
         self.figures_tab.status_message.connect(lambda m: self.statusBar().showMessage(m, 4000))
+        self.figures_tab.image_defaults_changed.connect(self._on_image_defaults_changed)
         self.tabs.addTab(self.figures_tab, "Figures")
 
         self.preferences_tab = PreferencesTab()
@@ -146,6 +147,7 @@ class MainWindow(QMainWindow):
 
     def _on_tab_changed(self, _index: int) -> None:
         self.flush_pending()                    # a gesture never spans two tabs
+        self.figures_tab.flush()
         w = self.tabs.currentWidget()
         if w is self.home:
             self.home.refresh_requested()
@@ -446,6 +448,17 @@ class MainWindow(QMainWindow):
         if panels:
             self.tabs.setCurrentWidget(self.figures_tab)
         return panels
+
+    def _on_image_defaults_changed(self, image_id: str) -> None:
+        """A panel was saved as its image's defaults: refresh the library."""
+        ref = self.project.images.get(image_id) if self.project else None
+        if ref is None:
+            return
+        thumb = write_thumbnail(self.ws, self.project, ref)
+        if thumb:
+            self.library.set_thumbnail(image_id, thumb)
+        if self.ref is not None and self.ref.id == image_id:
+            self._on_image_selected(image_id)
 
     def add_selected_to_figure(self) -> None:
         if self.ref is not None:
@@ -971,6 +984,7 @@ class MainWindow(QMainWindow):
     # ============================================================ closing
     def closeEvent(self, event) -> None:
         self.flush_pending()
+        self.figures_tab.flush()
         self.hashq.cancel_all()
         self._close_source()
         self.renderer.close()

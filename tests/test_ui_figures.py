@@ -123,16 +123,22 @@ def test_add_move_resize_delete_undo(app, window, workspace, mm_tiff, stk_tc):
         assert q.x_mm == round(q.x_mm)                     # 1 mm grid snap
     assert tab.a_undo.isEnabled()
 
-    # Resize panel A by its handle: aspect kept, one entry.
+    # Resize panel A by its handle (wider only): one entry; the crop is
+    # extended at constant scale, the image is not stretched.
     click(view, centre(ia))
     assert view.selected_ids() == [pa.id]
-    aspect = pa.width_mm / pa.height_mm
+    h0, scale0 = pa.height_mm, pa.crop.w / pa.width_mm
     corner = ia.mapToScene(ia.rect().bottomRight()) - QPointF(0.3, 0.3)
     n = len(proj.operation_log)
     drag(view, corner, corner + QPointF(15, 0))
+    app.processEvents()
     assert [e.operation for e in proj.operation_log[n:]] == ["figure.panel.resize"]
     assert pa.width_mm == pytest.approx(40 + 15, abs=1.01)
-    assert pa.width_mm / pa.height_mm == pytest.approx(aspect)
+    assert pa.height_mm == pytest.approx(h0)
+    assert pa.crop.w / pa.width_mm == pytest.approx(scale0)
+    assert pa.crop.x < 0                                    # runs off the image: background
+    r = view.item_for(pa.id).image_rect
+    assert r.width() == pytest.approx(64 / scale0) and r.height() == pytest.approx(h0)
 
     # Undo resize, then undo move: back to the first layout. (Undo restores a
     # snapshot: panels are new objects, look them up by id.)

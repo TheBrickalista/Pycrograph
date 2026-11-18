@@ -243,6 +243,10 @@ Bump `PROJECT_FORMAT_VERSION` to 2 with a migration (`Figure.page` → `PageSetu
 2. **Preview tab**: channel controls for the selection (mixed states), T/Z + projection,
    viewport pan/zoom (crop), rotation/flips, copy/paste rendering and viewport,
    reset/save image defaults, replace image.
+   *Done.* Rotation keeps the panel on the page and turns the crop about its centre at
+   the same scale. Copy viewport carries crop centre, scale (px per page-mm) and
+   orientation, so it pastes onto panels of another size. "Save as image defaults"
+   changes the library image (logged on the image) and is not part of the figure's undo.
 3. **Layout tools**: align, distribute, snap to grid, same size, align magnification, page
    setup + journal presets, split channels / montage / condition grid.
 4. **Labels, scale bar, border** with tokens.

@@ -11,7 +11,9 @@ move / resize / delete panels, snapshot undo/redo.
 
 Gestures
 --------
-Every user gesture goes through FigureEditor.gesture():
+Every user gesture goes through FigureEditor.gesture() (one-shot) or
+FigureEditor.edit(..., final=False) ... flush() (continuous: a slider drag
+applies every tick to the model, but logs once):
 
     before = snapshot(figure)  ->  mutate  ->  log + push undo + save
 
@@ -19,6 +21,9 @@ The log step diffs the figure against the snapshot and writes ONE entry per
 panel added, removed or changed (target_id = panel id, asset_sha256 = the
 panel's image hash), plus one figure-level entry if page/name/legend changed.
 So a move of five selected panels is one undo step and five log entries.
+Field paths name the changed leaves (``channels[1].white``, ``crop.x``;
+channels are keyed by channel index); a single changed leaf is logged as
+old -> new values, several as {path: value} dicts.
 Undo/redo restore a snapshot and are themselves logged the same way
 (operation ``figure.undo`` / ``figure.redo``): the log is append-only.
 
@@ -33,7 +38,8 @@ import uuid
 from contextlib import contextmanager
 from typing import Any, Callable, Iterable, Iterator, Optional
 
-from .models import Crop, Figure, ImageRef, PageSetup, Panel, Project
+from . import viewport
+from .models import ChannelSettings, Crop, Figure, ImageRef, PageSetup, Panel, Project, ZProjection
 from .storage import log_operation
 
 DEFAULT_PANEL_WIDTH_MM = 40.0
@@ -151,6 +157,47 @@ def _jsonable_panel(p: dict) -> dict:
     return {k: v for k, v in p.items() if k != "id"}
 
 
+def _indexed(items: list) -> Optional[dict]:
+    """{index: item} when every item is a dict with a unique 'index'."""
+    if not all(isinstance(i, dict) and "index" in i for i in items):
+        return None
+    out = {i["index"]: i for i in items}
+    return out if len(out) == len(items) else None
+
+
+def leaf_diff(old: Any, new: Any, path: str = "") -> list[tuple[str, Any, Any]]:
+    """[(path, old, new)] for every changed leaf. Lists of channel settings
+    are matched by channel index (``channels[2]``), other lists of equal
+    length by position, anything else is compared whole."""
+    if old == new:
+        return []
+    if isinstance(old, dict) and isinstance(new, dict):
+        out = []
+        for k in list(new) + [k for k in old if k not in new]:
+            out += leaf_diff(old.get(k), new.get(k), f"{path}.{k}" if path else str(k))
+        return out
+    if isinstance(old, list) and isinstance(new, list):
+        a, b = _indexed(old), _indexed(new)
+        if a is not None and b is not None and old and new and set(a) == set(b):
+            out = []
+            for idx in b:
+                out += leaf_diff(a[idx], b[idx], f"{path}[{idx}]")
+            return out
+        if len(old) == len(new) and old:
+            out = []
+            for i, (x, y) in enumerate(zip(old, new)):
+                out += leaf_diff(x, y, f"{path}[{i}]")
+            return out
+    return [(path, old, new)]
+
+
+def _field_values(changes: list[tuple[str, Any, Any]]) -> tuple[str, Any, Any]:
+    if len(changes) == 1:
+        return changes[0]
+    return (",".join(c[0] for c in changes), {c[0]: c[1] for c in changes},
+            {c[0]: c[2] for c in changes})
+
+
 def log_figure_changes(project: Project, figure: Figure, before: Snapshot, operation: str,
                        note: Optional[str] = None) -> int:
     """One log entry per panel added / removed / changed between `before`
@@ -180,11 +227,9 @@ def log_figure_changes(project: Project, figure: Figure, before: Snapshot, opera
                           asset_sha256=sha(old), field="panel", old_value=_jsonable_panel(old),
                           note=_note(note, f"figure {figure.id}: panel removed"))
         else:
-            keys = [k for k in new if new.get(k) != old.get(k)]
+            field, ov, nv = _field_values(leaf_diff(old, new))
             log_operation(project, operation, target_type="panel", target_id=pid,
-                          asset_sha256=sha(new), field=",".join(keys),
-                          old_value={k: old.get(k) for k in keys},
-                          new_value={k: new.get(k) for k in keys},
+                          asset_sha256=sha(new), field=field, old_value=ov, new_value=nv,
                           note=_note(note, f"figure {figure.id}"))
         n += 1
     fig_keys = [k for k in after if k != "panels" and after[k] != before.get(k)]
@@ -251,10 +296,26 @@ class FigureEditor:
         self.figure = figure
         self.save = save
         self.history = FigureHistory()
+        # Open continuous gesture: (snapshot before, operation, label, key)
+        self._live: Optional[tuple[Snapshot, str, str, str]] = None
 
     # ---- gesture plumbing ------------------------------------------------
+    @property
+    def has_pending(self) -> bool:
+        return self._live is not None
+
+    def flush(self) -> int:
+        """Commit the open continuous gesture (slider released, 700 ms idle,
+        another control touched, selection changed...)."""
+        if self._live is None:
+            return 0
+        before, operation, label, _key = self._live
+        self._live = None
+        return self._commit(before, operation, label)
+
     @contextmanager
     def gesture(self, operation: str, label: str, note: Optional[str] = None) -> Iterator[None]:
+        self.flush()
         before = snapshot(self.figure)
         try:
             yield
@@ -270,6 +331,43 @@ class FigureEditor:
             self.history.push(before, snapshot(self.figure), label)
             self.save()
         return n
+
+    def ref(self, panel: Panel) -> Optional[ImageRef]:
+        return self.project.images.get(panel.image_id)
+
+    def edit(self, panel_ids: Iterable[str], fn: Callable[[Panel, ImageRef], bool],
+             operation: str = "figure.panel.set", label: str = "Edit panel(s)",
+             key: Optional[str] = None, final: bool = True) -> tuple[int, int]:
+        """Apply fn(panel, ref) to each panel; fn returns False to skip a
+        panel (e.g. its image lacks that channel). With final=False the
+        gesture stays open across calls with the same `key` (slider ticks)
+        and is committed by flush() or by the next final call.
+        Returns (applied, skipped)."""
+        key = key or label
+        if self._live is not None and self._live[3] != key:
+            self.flush()
+        if self._live is None:
+            self._live = (snapshot(self.figure), operation, label, key)
+        applied = skipped = 0
+        try:
+            for pid in panel_ids:
+                panel = self.figure.panel(pid)
+                ref = self.ref(panel) if panel is not None else None
+                if panel is None or ref is None:
+                    skipped += 1
+                    continue
+                if fn(panel, ref) is False:
+                    skipped += 1
+                else:
+                    applied += 1
+        except BaseException:
+            before = self._live[0]
+            self._live = None
+            restore(self.figure, before)
+            raise
+        if final:
+            self.flush()
+        return applied, skipped
 
     # ---- panels ----------------------------------------------------------
     def add_images(self, refs: Iterable[ImageRef], width_mm: float = DEFAULT_PANEL_WIDTH_MM,
@@ -300,7 +398,8 @@ class FigureEditor:
 
     def set_geometry(self, changes: dict[str, Geometry], operation: str = "figure.panel.move",
                      label: str = "Move panel(s)") -> int:
-        """Apply new (x, y, w, h) to several panels as one gesture."""
+        """Apply new (x, y, w, h) to several panels as one gesture. A size
+        change extends/shrinks the crop at constant scale (design §2.4)."""
         changed = 0
         with self.gesture(operation, label):
             for pid, (x, y, w, h) in changes.items():
@@ -308,13 +407,19 @@ class FigureEditor:
                 if p is None:
                     continue
                 new = (float(x), float(y), max(MIN_PANEL_MM, float(w)), max(MIN_PANEL_MM, float(h)))
-                if new != (p.x_mm, p.y_mm, p.width_mm, p.height_mm):
-                    p.x_mm, p.y_mm, p.width_mm, p.height_mm = new
-                    changed += 1
+                if new == (p.x_mm, p.y_mm, p.width_mm, p.height_mm):
+                    continue
+                ref = self.ref(p)
+                if (new[2], new[3]) != (p.width_mm, p.height_mm) and ref is not None:
+                    s = ref.metadata.shape
+                    viewport.resize(p, s.X, s.Y, new[2], new[3])
+                p.x_mm, p.y_mm, p.width_mm, p.height_mm = new
+                changed += 1
         return changed
 
     # ---- undo / redo -----------------------------------------------------
     def undo(self) -> bool:
+        self.flush()
         if not self.history.can_undo:
             return False
         current = snapshot(self.figure)
@@ -325,6 +430,7 @@ class FigureEditor:
         return True
 
     def redo(self) -> bool:
+        self.flush()
         if not self.history.can_redo:
             return False
         current = snapshot(self.figure)
@@ -333,3 +439,197 @@ class FigureEditor:
         if log_figure_changes(self.project, self.figure, current, "figure.redo", note=label):
             self.save()
         return True
+
+
+# =================================================================== Preview
+# Panel operations used with FigureEditor.edit(). Each returns False when
+# the panel is skipped. They only touch the panel (the figure snapshot diff
+# does the logging).
+
+CHANNEL_FIELDS = ("visible", "lut", "black", "white", "gamma", "invert")
+
+
+def panel_channel(panel: Panel, index: int) -> Optional[ChannelSettings]:
+    return next((c for c in panel.channels if c.index == index), None)
+
+
+def set_channel_field(panel: Panel, ref: ImageRef, index: int, field: str, value: Any) -> bool:
+    """Matched by channel index; skipped when the panel's image has no such
+    channel. Levels are clamped per image (its own full scale)."""
+    if field not in CHANNEL_FIELDS:
+        raise ValueError(field)
+    if index >= ref.metadata.shape.C:
+        return False
+    cs = panel_channel(panel, index)
+    if cs is None:
+        cs = ChannelSettings(index=index, white=ref.metadata.full_scale)
+        panel.channels.append(cs)
+        panel.channels.sort(key=lambda c: c.index)
+    fs = ref.metadata.full_scale
+    if field == "black":
+        value = max(0, min(int(value), fs - 1, cs.white - 1))
+    elif field == "white":
+        value = min(fs, max(int(value), cs.black + 1, 1))
+    elif field == "gamma":
+        value = float(value)
+    elif field in ("visible", "invert"):
+        value = bool(value)
+    setattr(cs, field, value)
+    return True
+
+
+def set_levels(panel: Panel, ref: ImageRef, index: int, black: int, white: int) -> bool:
+    if index >= ref.metadata.shape.C:
+        return False
+    fs = ref.metadata.full_scale
+    white = min(fs, max(int(white), 1))
+    black = max(0, min(int(black), white - 1))
+    cs = panel_channel(panel, index)
+    if cs is None:
+        return set_channel_field(panel, ref, index, "white", white) and \
+            set_channel_field(panel, ref, index, "black", black)
+    cs.black, cs.white = black, white
+    return True
+
+
+def set_t(panel: Panel, ref: ImageRef, t: int) -> bool:
+    panel.t = max(0, min(int(t), ref.metadata.shape.T - 1))
+    return True
+
+
+def set_z(panel: Panel, ref: ImageRef, z: int) -> bool:
+    panel.z = max(0, min(int(z), ref.metadata.shape.Z - 1))
+    return True
+
+
+def set_projection(panel: Panel, ref: ImageRef, z_range: Optional[tuple[int, int]]) -> bool:
+    """Max-intensity projection over [z_start, z_end] (inclusive), clamped
+    to the image; None = single plane. Skipped for images with one Z."""
+    n = ref.metadata.shape.Z
+    if z_range is None:
+        panel.z_projection = None
+        return True
+    if n < 2:
+        return False
+    a, b = sorted(int(v) for v in z_range)
+    a, b = max(0, min(a, n - 1)), max(0, min(b, n - 1))
+    panel.z_projection = ZProjection(z_start=a, z_end=b)
+    return True
+
+
+def rotate(panel: Panel, ref: ImageRef, delta: int) -> bool:
+    s = ref.metadata.shape
+    viewport.set_rotation(panel, s.X, s.Y, panel.rotation_deg + delta)
+    return True
+
+
+def flip(panel: Panel, ref: ImageRef, attr: str) -> bool:
+    if attr not in ("flip_horizontal", "flip_vertical"):
+        raise ValueError(attr)
+    setattr(panel, attr, not getattr(panel, attr))
+    return True
+
+
+def rendering_of(panel: Panel) -> list[dict]:
+    """What 'Copy rendering' carries: the channel settings."""
+    return [c.model_dump() for c in panel.channels]
+
+
+def paste_rendering(panel: Panel, ref: ImageRef, rendering: list[dict]) -> bool:
+    """Channel settings matched by index; channels the image lacks are
+    ignored; levels clamped to the image's full scale."""
+    used = False
+    for d in rendering:
+        cs = ChannelSettings.model_validate(d)
+        if cs.index >= ref.metadata.shape.C:
+            continue
+        for f in ("visible", "lut", "gamma", "invert"):
+            set_channel_field(panel, ref, cs.index, f, getattr(cs, f))
+        set_levels(panel, ref, cs.index, cs.black, cs.white)
+        used = True
+    return used
+
+
+def paste_viewport(panel: Panel, ref: ImageRef, view: dict) -> bool:
+    viewport.paste_view(panel, view)
+    return True
+
+
+def reset_to_image_defaults(panel: Panel, ref: ImageRef) -> bool:
+    """Rendering, T/Z and orientation from the library image (projection
+    cleared); the viewport keeps its centre and scale."""
+    d = ref.display
+    s = ref.metadata.shape
+    panel.channels = [c.model_copy(deep=True) for c in d.channels]
+    panel.t, panel.z = min(d.t, s.T - 1), min(d.z, s.Z - 1)
+    panel.z_projection = None
+    panel.flip_horizontal, panel.flip_vertical = d.flip_horizontal, d.flip_vertical
+    viewport.set_rotation(panel, s.X, s.Y, d.rotation_deg)
+    return True
+
+
+def save_as_image_defaults(project: Project, panel: Panel) -> int:
+    """Copy the panel's rendering, T/Z and orientation to its library image
+    (the defaults of future panels). One log entry on the image."""
+    ref = project.images[panel.image_id]
+    before = ref.display.model_dump(mode="json")
+    d = ref.display
+    d.channels = [c.model_copy(deep=True) for c in panel.channels]
+    d.t, d.z = panel.t, panel.z
+    d.rotation_deg = panel.rotation_deg
+    d.flip_horizontal, d.flip_vertical = panel.flip_horizontal, panel.flip_vertical
+    changes = leaf_diff(before, d.model_dump(mode="json"))
+    if not changes:
+        return 0
+    field, ov, nv = _field_values([("display." + p, o, n) for p, o, n in changes])
+    log_operation(project, "image.display.from_panel", target_type="image", target_id=ref.id,
+                  asset_sha256=ref.sha256, field=field, old_value=ov, new_value=nv,
+                  note=f"saved as image defaults from panel {panel.id}")
+    return 1
+
+
+def replace_problems(panel: Panel, old: Optional[ImageRef], new: ImageRef) -> tuple[list[str], list[str]]:
+    """(errors, warnings) for showing `new` in `panel` with all its
+    settings. Errors refuse the replacement."""
+    errors: list[str] = []
+    warnings: list[str] = []
+    m = new.metadata
+    used = max((c.index for c in panel.channels), default=-1)
+    if old is not None and old.metadata.shape.C != m.shape.C:
+        errors.append(f"{new.filename}: {m.shape.C} channel(s), the panel's image has "
+                      f"{old.metadata.shape.C}")
+    elif used >= m.shape.C:
+        errors.append(f"{new.filename}: only {m.shape.C} channel(s), the panel uses channel "
+                      f"{used + 1}")
+    if panel.scale_bar.visible and not m.calibration.is_calibrated:
+        errors.append(f"{new.filename}: not calibrated, the panel shows a scale bar")
+    if old is not None:
+        o = old.metadata
+        if (o.shape.X, o.shape.Y) != (m.shape.X, m.shape.Y):
+            warnings.append(f"size differs ({o.shape.X}×{o.shape.Y} → {m.shape.X}×{m.shape.Y} px): "
+                            "the crop is kept in pixels")
+        if o.bit_depth != m.bit_depth:
+            warnings.append(f"bit depth differs ({o.bit_depth} → {m.bit_depth}): levels clamped")
+        if (o.calibration.pixel_size_x != m.calibration.pixel_size_x):
+            warnings.append("pixel size differs: the same crop shows a different area")
+    if panel.t >= m.shape.T or panel.z >= m.shape.Z or (
+            panel.z_projection and panel.z_projection.z_end >= m.shape.Z):
+        warnings.append("T/Z position outside the new image: clamped")
+    return errors, warnings
+
+
+def replace_image(panel: Panel, new: ImageRef) -> None:
+    """Keep every setting; clamp T/Z, projection and levels to `new`."""
+    s = new.metadata.shape
+    fs = new.metadata.full_scale
+    panel.image_id = new.id
+    panel.t, panel.z = min(panel.t, s.T - 1), min(panel.z, s.Z - 1)
+    if panel.z_projection is not None:
+        if s.Z < 2:
+            panel.z_projection = None
+        else:
+            panel.z_projection = ZProjection(z_start=min(panel.z_projection.z_start, s.Z - 1),
+                                             z_end=min(panel.z_projection.z_end, s.Z - 1))
+    for c in panel.channels:
+        c.white = min(c.white, fs)
+        c.black = min(c.black, c.white - 1)

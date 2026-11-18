@@ -6,7 +6,39 @@ All notable changes to Pycrograph are documented here. The format follows
 
 ## [Unreleased]
 
-Figure editor, step 1 (docs/design/figure-editor.md §6).
+Figure editor, steps 1 and 2 (docs/design/figure-editor.md §6).
+
+### Added (step 2: Preview)
+- Inspector tabs Preview · Info. Preview edits all selected panels; values
+  that differ show a mixed state (blank field, partially checked box,
+  hidden slider handle, “—”), and touching a control sets every panel.
+- Channel controls (reused `ChannelControls`) matched by channel index;
+  panels whose image lacks the channel are skipped (status bar count);
+  levels range = largest full scale of the selection, clamped per image.
+  Histogram, saturation and Auto computed on the panel's crop.
+- T and Z sliders, max-intensity Z projection with a range.
+- Viewport = crop (§2.4): mini-view of the whole image with the crop
+  rectangle (drag = pan, wheel = zoom), zoom % (100 % = whole image),
+  Fit; rotation 90° (panel kept, crop turned) and flips.
+- Copy / Paste rendering (channel settings by index) and viewport
+  (centre, scale, orientation); Reset to image defaults; Save as image
+  defaults (logged on the image, library thumbnail refreshed); Replace
+  image with a compatibility check (channel count, calibration when a scale
+  bar is shown; warnings for size, bit depth, pixel size, T/Z clamping).
+- Continuous gestures: every tick redraws, one undo step and one log entry
+  per panel when released or after 700 ms idle. Log fields are leaf paths
+  (`channels[1].white`, `crop.x`).
+
+### Changed (step 2)
+- Resizing a panel extends or shrinks the crop at constant scale (crop
+  centre kept) instead of scaling the image; the handle resizes freely,
+  Shift keeps the aspect ratio.
+- The canvas draws the image at one uniform scale, clipped to the panel;
+  where the crop runs off the image the page background shows (it was
+  drawn into the whole panel rectangle).
+- `Crop.x` / `Crop.y` may be negative (crop past the image's top/left).
+
+### Added (step 1)
 
 ### Added
 - Top-level tabs: Home (projects: new / open / archive / restore; figures of

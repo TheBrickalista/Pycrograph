@@ -16,6 +16,12 @@ The widget never touches the model. It emits
 where `final` marks the end of a gesture (slider released, field committed,
 checkbox/combo changed). The main window applies every change to the model
 and redraws, but logs + saves once per gesture.
+
+Mixed state (figure inspector, several panels selected): set_mixed(fields)
+shows the listed fields as undetermined — partially checked box, empty
+LUT combo, blank Black/White/Gamma field and hidden slider handle.
+Touching such a control emits its value as usual (applied to every
+selected panel) and clears the mixed display of that field.
 """
 
 from __future__ import annotations
@@ -42,6 +48,8 @@ FRAME_STYLE = """
 BADGE_WARN = "color: #b45309; font-weight: bold; font-size: 11px;"
 BADGE_OK = "color: #15803d; font-size: 11px;"
 CUSTOM_LUT = "Custom…"
+MIXED_TEXT = "—"
+HIDDEN_HANDLE = "QSlider::handle:horizontal { background: transparent; border: none; }"
 
 
 class ChannelControls(QFrame):
@@ -57,6 +65,7 @@ class ChannelControls(QFrame):
         self.index = info.index
         self.full_scale = int(full_scale)
         self._lut = settings.lut
+        self.mixed_fields: set[str] = set()
 
         lay = QVBoxLayout(self)
         lay.setContentsMargins(10, 8, 10, 10)
@@ -71,6 +80,7 @@ class ChannelControls(QFrame):
         self.name_lbl.setToolTip(self._info_tooltip(info))
         self.lut_combo = QComboBox()
         self.lut_combo.addItems([*LUT_NAMES, CUSTOM_LUT])
+        self.lut_combo.setPlaceholderText(MIXED_TEXT)
         self.lut_combo.setToolTip("Colour lookup table (display only)")
         head.addWidget(self.visible_cb)
         head.addWidget(self.name_lbl, 1)
@@ -156,15 +166,19 @@ class ChannelControls(QFrame):
         return "\n".join(parts)
 
     def _connect(self) -> None:
-        self.visible_cb.toggled.connect(lambda v: self.changed.emit(self.index, "visible", bool(v), True))
+        self.visible_cb.clicked.connect(lambda v: self._on_check("visible", v))
+        self.visible_cb.toggled.connect(lambda v: self._on_toggled("visible", v))
         self.lut_combo.activated.connect(self._on_lut_activated)
-        self.invert_cb.toggled.connect(lambda v: self.changed.emit(self.index, "invert", bool(v), True))
+        self.invert_cb.clicked.connect(lambda v: self._on_check("invert", v))
+        self.invert_cb.toggled.connect(lambda v: self._on_toggled("invert", v))
         self.gamma_spin.valueChanged.connect(self._on_gamma)
 
         self.black_slider.valueChanged.connect(lambda v: self._on_level("black", v, False))
         self.white_slider.valueChanged.connect(lambda v: self._on_level("white", v, False))
         self.black_slider.sliderReleased.connect(lambda: self._commit_level("black"))
         self.white_slider.sliderReleased.connect(lambda: self._commit_level("white"))
+        self.black_slider.sliderPressed.connect(lambda: self._unmix_level("black"))
+        self.white_slider.sliderPressed.connect(lambda: self._unmix_level("white"))
         self.black_spin.valueChanged.connect(lambda v: self._on_level("black", v, True))
         self.white_spin.valueChanged.connect(lambda v: self._on_level("white", v, True))
         self.hist.gate_changed.connect(lambda which, v: self._on_level(which, v, False))
@@ -177,6 +191,7 @@ class ChannelControls(QFrame):
 
     # ------------------------------------------------------------- setters
     def set_settings(self, s: ChannelSettings) -> None:
+        self._clear_mixed_display()
         widgets = (self.visible_cb, self.lut_combo, self.black_slider, self.white_slider,
                    self.black_spin, self.white_spin, self.gamma_spin, self.invert_cb)
         for w in widgets:
@@ -199,6 +214,83 @@ class ChannelControls(QFrame):
         self.hist.set_gates(s.black, s.white)
         self.gamma_badge.setVisible(abs(s.gamma - 1.0) > 1e-9)
         self._update_name_colour()
+
+    # ------------------------------------------------------------ mixed
+    def set_mixed(self, fields) -> None:
+        """Show `fields` (subset of visible, lut, black, white, gamma,
+        invert) as differing between the selected panels."""
+        fields = set(fields)
+        self.mixed_fields = fields
+        if "visible" in fields:
+            self._set_check_mixed(self.visible_cb)
+        if "invert" in fields:
+            self._set_check_mixed(self.invert_cb)
+        if "lut" in fields:
+            self.lut_combo.blockSignals(True)
+            self.lut_combo.setCurrentIndex(-1)
+            self.lut_combo.blockSignals(False)
+        for which in ("black", "white"):
+            if which in fields:
+                slider, spin = self._level_widgets(which)
+                slider.setStyleSheet(HIDDEN_HANDLE)
+                spin.blockSignals(True)
+                spin.setMinimum(-1)
+                spin.setSpecialValueText(MIXED_TEXT)
+                spin.setValue(-1)
+                spin.blockSignals(False)
+        if "gamma" in fields:
+            self.gamma_spin.blockSignals(True)
+            self.gamma_spin.setMinimum(0.0)
+            self.gamma_spin.setSpecialValueText(MIXED_TEXT)
+            self.gamma_spin.setValue(0.0)
+            self.gamma_spin.blockSignals(False)
+            self.gamma_badge.setVisible(False)
+
+    @staticmethod
+    def _set_check_mixed(cb: QCheckBox) -> None:
+        cb.blockSignals(True)
+        cb.setCheckState(Qt.PartiallyChecked)
+        cb.blockSignals(False)
+
+    def _level_widgets(self, which: str):
+        return ((self.black_slider, self.black_spin) if which == "black"
+                else (self.white_slider, self.white_spin))
+
+    def _unmix_level(self, which: str) -> None:
+        if which not in self.mixed_fields:
+            return
+        self.mixed_fields.discard(which)
+        slider, spin = self._level_widgets(which)
+        slider.setStyleSheet("")
+        spin.blockSignals(True)
+        spin.setSpecialValueText("")
+        spin.setMinimum(0)
+        spin.setValue(slider.value())
+        spin.blockSignals(False)
+
+    def _clear_mixed_display(self) -> None:
+        for which in ("black", "white"):
+            self._unmix_level(which)
+        if "gamma" in self.mixed_fields:
+            self.gamma_spin.blockSignals(True)
+            self.gamma_spin.setSpecialValueText("")
+            self.gamma_spin.setMinimum(0.10)
+            self.gamma_spin.blockSignals(False)
+        for cb in (self.visible_cb, self.invert_cb):
+            cb.setTristate(False)
+        self.mixed_fields = set()
+
+    def _on_check(self, field: str, checked: bool) -> None:
+        # A click on a partially checked box: Qt's next state decides the value.
+        if field in self.mixed_fields:
+            self.mixed_fields.discard(field)
+            cb = self.visible_cb if field == "visible" else self.invert_cb
+            cb.setTristate(False)        # setCheckState(Partially) had turned it on
+            self.changed.emit(self.index, field, bool(checked), True)
+
+    def _on_toggled(self, field: str, checked: bool) -> None:
+        if field not in self.mixed_fields:
+            self.changed.emit(self.index, field, bool(checked), True)
 
     def set_stain(self, text: str) -> None:
         self.stain_edit.setText(text)
@@ -241,6 +333,7 @@ class ChannelControls(QFrame):
             text = colour.name().upper()
             self.lut_combo.setItemText(i, text)
         self._lut = text
+        self.mixed_fields.discard("lut")
         self._update_name_colour()
         self.changed.emit(self.index, "lut", text, True)
 
@@ -254,13 +347,27 @@ class ChannelControls(QFrame):
         self.lut_combo.blockSignals(False)
 
     def _on_gamma(self, v: float) -> None:
+        if "gamma" in self.mixed_fields:
+            self.mixed_fields.discard("gamma")
+            v = max(v, 0.10)
+            self.gamma_spin.blockSignals(True)
+            self.gamma_spin.setSpecialValueText("")
+            self.gamma_spin.setMinimum(0.10)
+            self.gamma_spin.setValue(v)
+            self.gamma_spin.blockSignals(False)
         self.gamma_badge.setVisible(abs(v - 1.0) > 1e-9)
         self.changed.emit(self.index, "gamma", float(round(v, 2)), True)
 
     def _on_level(self, which: str, value: int, final: bool) -> None:
         value = int(value)
-        black = value if which == "black" else self.black_spin.value()
-        white = value if which == "white" else self.white_spin.value()
+        if which in self.mixed_fields:
+            self._unmix_level(which)
+            value = max(0, value)
+        # A mixed counterpart does not constrain (each panel is clamped).
+        black = value if which == "black" else (
+            0 if "black" in self.mixed_fields else self.black_spin.value())
+        white = value if which == "white" else (
+            self.full_scale if "white" in self.mixed_fields else self.white_spin.value())
         if which == "black" and black >= white:
             black = white - 1
         if which == "white" and white <= black:
@@ -276,13 +383,18 @@ class ChannelControls(QFrame):
         self.changed.emit(self.index, which, int(v), True)
 
     def _on_full(self) -> None:
+        self._clear_mixed_display()
         self._sync_level_widgets(0, self.full_scale)
         self.changed.emit(self.index, "black", 0, True)
         self.changed.emit(self.index, "white", self.full_scale, True)
 
     def _sync_level_widgets(self, black: int, white: int) -> None:
-        for w, v in ((self.black_slider, black), (self.black_spin, black),
-                     (self.white_slider, white), (self.white_spin, white)):
+        pairs = []
+        if "black" not in self.mixed_fields:
+            pairs += [(self.black_slider, black), (self.black_spin, black)]
+        if "white" not in self.mixed_fields:
+            pairs += [(self.white_slider, white), (self.white_spin, white)]
+        for w, v in pairs:
             w.blockSignals(True)
             w.setValue(v)
             w.blockSignals(False)
