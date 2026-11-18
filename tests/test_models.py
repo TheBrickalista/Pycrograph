@@ -12,8 +12,8 @@ from pydantic import ValidationError
 from pycrograph.jsonsafe import dumps_strict
 from pycrograph.models import (
     PROJECT_FORMAT_VERSION, ChannelInfo, ChannelSettings, Crop, Dataset, Figure, ImageDisplay,
-    ImageMetadata, ImageRef, Overlay, PagePreset, Panel, PanelLabel, Project, ProjectMeta,
-    ScaleBar, Shape5D, ZProjection,
+    ImageMetadata, ImageRef, InsetStyle, Overlay, PagePreset, PageSetup, Panel, PanelBorder,
+    PanelLabel, Project, ProjectMeta, ScaleBar, Shape, Shape5D, ZProjection,
 )
 from pycrograph.storage import ProjectFormatError, load_project_file
 
@@ -35,9 +35,16 @@ def full_project() -> Project:
                    channel_stains={1: "anti-Lamin A/C"})
     panel = Panel(id="p1", image_id="img1", channels=chans, crop=Crop(x=10, y=20, w=100, h=80),
                   z_projection=ZProjection(z_start=0, z_end=0),
-                  labels=[PanelLabel(text="GFP", source="channel:0", position="top-left")],
-                  scale_bar=ScaleBar(visible=True, length=10), lock_group="row1")
-    fig = Figure(id="f1", name="Fig 1", page=PagePreset(), panels=[panel],
+                  labels=[PanelLabel(text="GFP", source="channel:0", position="top-left"),
+                          PanelLabel(text="[time:min]", position="left-vertical")],
+                  scale_bar=ScaleBar(visible=True, length=10, font_size_pt=7, label_position="above"),
+                  lock_group="row1", page=1, border=PanelBorder(visible=True, width_pt=1),
+                  shapes=[Shape(id="s1", kind="arrow", points=[(5, 5), (20, 30)])],
+                  time_offset_s=-120.0, z_offset=1.5)
+    inset = Panel(id="p2", image_id="img1", inset_of="p1", inset_style=InsetStyle(color="#FFFF00"),
+                  crop=Crop(x=40, y=40, w=20, h=20))
+    fig = Figure(id="f1", name="Fig 1", page=PageSetup.from_preset(PagePreset(), n_pages=2),
+                 panels=[panel, inset], legend="Figure 1. Nuclei.",
                  overlays=[Overlay(id="o1", kind="arrow", panel_id="p1", points=[(1, 2), (3, 4)])])
     return Project(project=ProjectMeta(id="proj1", name="P", created_utc="2026-11-18T00:00:00+00:00",
                                        app_version="0.1.0"),
@@ -54,6 +61,9 @@ def test_round_trip_identical(tmp_path):
     assert q.images["img1"].channel_stains == {1: "anti-Lamin A/C"}     # int keys restored
     assert q.images["img1"].mtime_ns == 1_700_000_000_123_456_789        # no float precision loss
     assert q.figures[0].overlays[0].points == [(1, 2), (3, 4)]
+    assert q.figures[0].panels[0].shapes[0].points == [(5, 5), (20, 30)]
+    assert q.figures[0].page.n_pages == 2 and q.project.format_version == PROJECT_FORMAT_VERSION
+    assert not q.operation_log                        # current format: no migration entry
 
 
 def test_validation():
@@ -78,6 +88,18 @@ def test_newer_format_refused(tmp_path):
     path.write_text(json.dumps(d))
     with pytest.raises(ProjectFormatError):
         load_project_file(path)
+
+
+def test_page_setup():
+    ps = PageSetup.from_preset(PagePreset(name="Single", width_mm=89, max_height_mm=247))
+    assert (ps.width_mm, ps.height_mm) == (89, 247)
+    assert ps.size_mm == (89, 247)
+    assert ps.model_copy(update={"orientation": "landscape"}).size_mm == (247, 89)
+    assert PROJECT_FORMAT_VERSION == 2
+    with pytest.raises(ValidationError):
+        PageSetup(n_pages=0)
+    with pytest.raises(ValidationError):
+        Panel(id="p", image_id="i", width_mm=0)
 
 
 def test_full_scale():

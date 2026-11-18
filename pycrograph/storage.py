@@ -29,6 +29,7 @@ SHA-256 equals the recorded one.
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import shutil
 import tempfile
@@ -44,6 +45,7 @@ from . import __version__
 from .display import default_channel_settings
 from .jsonsafe import dumps_strict, finite_or_none
 from .logchain import append_log_entry
+from .migrations import migrate_project_dict
 from .models import (
     PROJECT_FORMAT_VERSION,
     Dataset,
@@ -196,13 +198,30 @@ class Workspace:
 
 
 def load_project_file(path: str | Path) -> Project:
+    """Read, migrate (older format versions) and validate a project.json.
+
+    A migration happens in memory only and is recorded as one
+    ``project.migrate`` log entry; the file is rewritten (new format + that
+    entry) at the next save, so the file and its log never disagree."""
     text = Path(path).read_text(encoding="utf-8")
-    project = Project.model_validate_json(text)
-    if project.project.format_version > PROJECT_FORMAT_VERSION:
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise ProjectFormatError(f"{path}: not valid JSON ({exc})") from exc
+    if not isinstance(data, dict) or not isinstance(data.get("project"), dict):
+        raise ProjectFormatError(f"{path}: not a Pycrograph project")
+    version = int(data["project"].get("format_version", 1))
+    if version > PROJECT_FORMAT_VERSION:
         raise ProjectFormatError(
-            f"{path}: project format {project.project.format_version} is newer than this "
+            f"{path}: project format {version} is newer than this "
             f"Pycrograph ({PROJECT_FORMAT_VERSION}); please update the app."
         )
+    data, old_version = migrate_project_dict(data)
+    project = Project.model_validate(data)
+    if old_version < PROJECT_FORMAT_VERSION:
+        log_operation(project, "project.migrate", target_type="project",
+                      target_id=project.project.id, field="project.format_version",
+                      old_value=old_version, new_value=PROJECT_FORMAT_VERSION)
     return project
 
 

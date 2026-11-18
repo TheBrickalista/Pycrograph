@@ -4,6 +4,40 @@ All notable changes to Pycrograph are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+Figure editor, step 1 (docs/design/figure-editor.md §6).
+
+### Added
+- Top-level tabs: Home (projects: new / open / archive / restore; figures of
+  the open project), Library (the session-1 view), Figures, Preferences
+  (default page preset, read-only), About (version, licence, citation).
+- Figures tab: figure selector (New / Rename), page canvas in millimetres at
+  journal width (Nature double column, 183 × 170 mm by default), panels
+  rendered from the raw files; click, Ctrl/Shift-click, rubber-band and
+  Select All; drag to move (1 mm grid snap); corner handle to resize
+  (aspect ratio kept); Delete; Undo / Redo (snapshot based); info pane with
+  crop and effective resolution (warns below the preset dpi).
+- “Add to figure” (library context menu and toolbar): one panel per image
+  with a copy of the image's current display settings; creates “Figure 1”
+  when the project has no figure.
+- `PanelRenderer` (`render.py`): crop by array slicing, then
+  `display.render_composite`, then orientation; max Z projection; LRU cache.
+- `figures.py`: `FigureEditor` — one undo step per gesture and one
+  operation-log entry per affected panel (`figure.panel.add/move/resize/delete`,
+  `figure.undo/redo`), then save.
+- Models v2: `PageSetup` (preset, page size, orientation, pages, background,
+  grid, snap), `PanelBorder`, `InsetStyle`, `Shape`; `Panel.page`, `border`,
+  `inset_style`, `time_offset_s`, `z_offset`, `shapes`; label positions
+  `left-vertical` / `right-vertical`; `ScaleBar.font_size_pt` and
+  `label_position`; `Figure.legend`.
+
+### Changed
+- `PROJECT_FORMAT_VERSION` is 2. Version-1 projects are migrated on load
+  (`Figure.page` `PagePreset` → `PageSetup`); the migration is recorded as a
+  `project.migrate` log entry and written at the next save.
+- About opens the About tab instead of a dialog.
+
 ## [0.1.0] - 2026-11-18
 
 Initial scaffold (session 1).

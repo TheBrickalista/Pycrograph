@@ -266,7 +266,8 @@ class LibraryPanel(QWidget):
                         ("Rename dataset…", "rename_dataset", "dataset", d[1]),
                         ("Hide dataset", "hide_dataset", "dataset", d[1])]
         if d and d[0] == "image":
-            actions += [("Relink…", "relink", "image", d[1]),
+            actions += [("Add to figure", "add_to_figure", "image", d[1]),
+                        ("Relink…", "relink", "image", d[1]),
                         ("Verify file (re-hash)", "verify", "image", d[1]),
                         ("Copy into project", "copy_into", "image", d[1]),
                         ("Add to dataset…", "add_to_dataset", "image", d[1]),

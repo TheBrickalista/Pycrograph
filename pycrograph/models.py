@@ -29,7 +29,7 @@ from pydantic import BaseModel, Field
 
 # Bump when the on-disk schema changes incompatibly; storage.load_project
 # refuses files with a higher version than it knows.
-PROJECT_FORMAT_VERSION = 1
+PROJECT_FORMAT_VERSION = 2   # 2: Figure.page is a PageSetup (see migrations.py)
 
 Rotation = Literal[0, 90, 180, 270]
 
@@ -174,7 +174,7 @@ class Dataset(BaseModel):
 
 
 # --------------------------------------------------------------------------
-# Figures (canvas) — models only in session 1; the canvas comes next.
+# Figures (canvas). See docs/design/figure-editor.md §3.
 # Kept independent of microscopy specifics where possible so the layout code
 # can become shared-core with PysternBlot's planned "structured figure
 # composition".
@@ -194,7 +194,7 @@ class PanelLabel(BaseModel):
     # "channel:<i>", "time", "z", "tag:<name>", "kv:<key>" or "" (free text)
     source: str = ""
     position: Literal[
-        "top", "bottom", "left", "right",
+        "top", "bottom", "left", "right", "left-vertical", "right-vertical",
         "top-left", "top-right", "bottom-left", "bottom-right",
     ] = "top"
     font_size_pt: Optional[float] = None
@@ -209,6 +209,8 @@ class ScaleBar(BaseModel):
     thickness_pt: float = 2.0
     show_label: bool = True
     color: str = "#FFFFFF"
+    font_size_pt: Optional[float] = None         # None = page preset font size
+    label_position: Literal["below", "above"] = "below"
 
 
 class ZProjection(BaseModel):
@@ -217,28 +219,62 @@ class ZProjection(BaseModel):
     z_end: int = Field(ge=0)             # inclusive
 
 
+class PanelBorder(BaseModel):
+    visible: bool = False
+    color: str = "#FFFFFF"
+    width_pt: float = Field(0.5, gt=0)
+
+
+class InsetStyle(BaseModel):
+    """Style and links of an inset panel (Panel.inset_of is set). The
+    rectangle on the parent is derived from the inset's crop at render time."""
+    color: str = "#FFFFFF"
+    width_pt: float = Field(0.75, gt=0)
+    show_on_parent: bool = True
+    follow_parent_tz: bool = True
+    follow_parent_rendering: bool = True
+
+
+class Shape(BaseModel):
+    """Vector shape drawn on a panel, in raw-image pixel coordinates, so it
+    follows the crop and zoom. Annotation only — never touches pixels."""
+    id: str
+    kind: Literal["arrow", "line", "rect", "ellipse"]
+    points: List[tuple[float, float]] = Field(default_factory=list)
+    color: str = "#FFFFFF"
+    width_pt: float = Field(1.0, gt=0)            # page points: equal on every panel
+
+
 class Panel(BaseModel):
     id: str
     image_id: str
-    # Position and size on the page, in millimetres.
+    # Page index (0-based) and position/size on that page, in millimetres.
+    page: int = Field(0, ge=0)
     x_mm: float = 0.0
     y_mm: float = 0.0
-    width_mm: float = 40.0
-    height_mm: float = 40.0
+    width_mm: float = Field(40.0, gt=0)
+    height_mm: float = Field(40.0, gt=0)
     t: int = Field(0, ge=0)
     z: int = Field(0, ge=0)
     z_projection: Optional[ZProjection] = None
     channels: List[ChannelSettings] = Field(default_factory=list)
+    # Viewport = crop, in raw pixels (None = the whole image).
     crop: Optional[Crop] = None
     rotation_deg: Rotation = 0
     flip_horizontal: bool = False
     flip_vertical: bool = False
     labels: List[PanelLabel] = Field(default_factory=list)
     scale_bar: ScaleBar = Field(default_factory=ScaleBar)
+    border: PanelBorder = Field(default_factory=PanelBorder)
+    shapes: List[Shape] = Field(default_factory=list)
+    # Offsets for [time] / [z] label tokens (t = 0 at drug addition, ...).
+    time_offset_s: float = 0.0
+    z_offset: float = 0.0
     # Panels sharing a non-empty lock group share levels/LUT (row/column lock).
     lock_group: Optional[str] = None
-    # Inset support: parent panel id + the crop on the parent it magnifies.
+    # Inset support: parent panel id; the region shown is this panel's crop.
     inset_of: Optional[str] = None
+    inset_style: Optional[InsetStyle] = None
 
 
 class PagePreset(BaseModel):
@@ -249,6 +285,30 @@ class PagePreset(BaseModel):
     font_family: str = "Arial"
     font_size_pt: float = 8.0
     min_line_pt: float = 0.5
+
+
+class PageSetup(BaseModel):
+    """Paper of a figure: a journal preset plus the actual page size.
+    width_mm / height_mm are the portrait size; landscape swaps them."""
+    preset: PagePreset = Field(default_factory=PagePreset)
+    width_mm: float = Field(183.0, gt=0)
+    height_mm: float = Field(170.0, gt=0)
+    orientation: Literal["portrait", "landscape"] = "portrait"
+    n_pages: int = Field(1, ge=1)
+    background: str = "#FFFFFF"
+    grid_mm: float = Field(1.0, gt=0)
+    snap: bool = True
+
+    @classmethod
+    def from_preset(cls, preset: PagePreset, **kw: Any) -> "PageSetup":
+        return cls(preset=preset, width_mm=preset.width_mm, height_mm=preset.max_height_mm, **kw)
+
+    @property
+    def size_mm(self) -> tuple[float, float]:
+        """(width, height) as laid out on screen and paper."""
+        if self.orientation == "landscape":
+            return self.height_mm, self.width_mm
+        return self.width_mm, self.height_mm
 
 
 class Overlay(BaseModel):
@@ -264,10 +324,14 @@ class Overlay(BaseModel):
 class Figure(BaseModel):
     id: str
     name: str
-    page: PagePreset = Field(default_factory=PagePreset)
+    page: PageSetup = Field(default_factory=PageSetup)
     panels: List[Panel] = Field(default_factory=list)
     overlays: List[Overlay] = Field(default_factory=list)
+    legend: str = ""                     # goes to the export info page
     hidden: bool = False
+
+    def panel(self, panel_id: str) -> Optional[Panel]:
+        return next((p for p in self.panels if p.id == panel_id), None)
 
 
 # --------------------------------------------------------------------------
@@ -320,4 +384,7 @@ class Project(BaseModel):
 
     def datasets_containing(self, image_id: str) -> List[Dataset]:
         return [d for d in self.datasets if image_id in d.image_ids]
+
+    def figure(self, figure_id: str) -> Optional[Figure]:
+        return next((f for f in self.figures if f.id == figure_id), None)
 
