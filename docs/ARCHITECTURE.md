@@ -17,14 +17,20 @@ hash-chained operation log, and a PySide6 `QGraphicsView` UI.
 
 | Module | Role |
 |---|---|
-| `models.py` | `Project › Dataset › ImageRef`, `ChannelSettings`, `ImageDisplay`, `Panel`, `Figure`, `OperationLogEntry` |
+| `models.py` | `Project › Dataset › ImageRef`, `ChannelSettings`, `ImageDisplay`, `Figure` (`PageSetup`, `legend`), `Panel` (`PanelBorder`, `InsetStyle`, `Shape`), `OperationLogEntry`. `PROJECT_FORMAT_VERSION = 2` |
+| `migrations.py` | Raw-dict migrations of `project.json` applied before validation (1 → 2: `Figure.page` `PagePreset` → `PageSetup`) |
+| `figures.py` | Figure editing without Qt: create/rename figures, panels from library images (copy of display settings), move/resize/delete, `FigureEditor` gestures with snapshot undo/redo |
+| `render.py` | `PanelRenderer`: raw plane(s) or max projection → crop by array slicing → `render_composite` → orientation; LRU cache keyed by source hash + settings |
 | `readers/` | `ImageSource` interface (T, Z, C, Y, X; lazy `get_plane`). `tiff.py`: plain TIFF, MetaMorph TIFF (XML), MetaMorph STK (UIC tags). `metamorph.py`: metadata parsing |
 | `display.py` | window → gamma → invert → LUT → additive composite → RGB8; orientation; saturation; auto-window |
 | `storage.py` | `Workspace` (atomic saves), import **by reference**, SHA-256, `check_image`, relink (single + drive-prefix), copy into project, annotations, thumbnails |
 | `logchain.py` | Hash-chained log — **shared-core** (verbatim from PysternBlot) |
 | `jsonsafe.py` | Strict JSON — **shared-core** (verbatim) |
 | `integrity.py` | Integrity report (JSON) — **shared-core** (adapted) |
-| `ui/main_window.py` | Library (left) · viewer (centre) · inspector (right); gesture commit |
+| `ui/main_window.py` | Tabs Home · Library · Figures · Preferences · About. Library tab = tree (left) · viewer (centre) · inspector (right); gesture commit |
+| `ui/home_tab.py` | Project list (new / open / archive / restore), figures of the open project |
+| `ui/figures_tab.py`, `ui/figure_canvas.py` | Figure selector, page canvas in mm at journal width, panel items (select, rubber band, move, resize handle), undo/redo, info pane |
+| `ui/info_tabs.py` | Preferences (default page preset, read-only for now) and About |
 | `ui/library_panel.py` | Virtual tree, search/rating filter, metadata, tags / rating / key–values |
 | `ui/channel_controls.py` | One channel: visibility, LUT, histogram gates, Black/White, gamma, invert, saturation |
 | `ui/workers.py` | Background hashing (`QThreadPool`, one file at a time) |
@@ -60,6 +66,26 @@ separate solid saturated structures from hot pixels.
 Every model change is logged once per gesture (slider release, field commit,
 or 700 ms without a tick), then the project is saved: `project.json` and the
 log never disagree. Field paths look like `display.channels[1].white`.
+
+## Figures
+
+Scene unit = 1 mm; pages are stacked vertically (`Panel.page`). The canvas
+never writes the model: on mouse release it reports changed geometry once,
+and `FigureEditor` applies it as one gesture — snapshot before, mutate, one
+log entry per panel added / removed / changed (`target_type="panel"`,
+`asset_sha256` = the panel's image), push the (before, after) snapshots on
+the undo stack, save. Undo/redo restore a snapshot and are logged the same
+way (`figure.undo` / `figure.redo`). The undo stack is in memory only.
+
+On screen, panels are decimated by an integer stride to at most 1024 px per
+side (no interpolation); export will render at native crop resolution.
+
+## Format migrations
+
+`load_project_file` parses the JSON, refuses newer versions, applies
+`migrations.migrate_project_dict` and validates. A migration is logged
+(`project.migrate`) in memory; the file is only rewritten — new format and
+that entry together — at the next save.
 
 ## STK axis inference
 

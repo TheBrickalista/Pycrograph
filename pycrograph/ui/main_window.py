@@ -6,8 +6,12 @@
 # the Free Software Foundation, version 3 of the License.
 
 """
-Main window (session 1): library tree on the left, single-image viewer in
-the centre, per-channel inspector on the right.
+Main window: top-level tabs Home · Library · Figures · Preferences · About.
+
+The Library tab is the session-1 view (tree on the left, single-image viewer
+in the centre, per-channel inspector on the right); settings made there are
+the image's defaults, copied into a panel by "Add to figure". The Figures
+tab is the figure editor (ui/figures_tab.py).
 
 Model changes follow PysternBlot's rule: the screen updates on every tick of
 a continuous control, but one operation-log entry (old -> new) and one save
@@ -25,7 +29,7 @@ from PySide6.QtGui import QAction, QBrush, QColor, QFont, QImage, QPixmap
 from PySide6.QtWidgets import (
     QApplication, QFileDialog, QFrame, QGraphicsPixmapItem, QGraphicsScene, QHBoxLayout,
     QInputDialog, QLabel, QMainWindow, QMessageBox, QProgressDialog, QPushButton,
-    QScrollArea, QSlider, QSplitter, QToolBar, QVBoxLayout, QWidget,
+    QScrollArea, QSlider, QSplitter, QTabWidget, QToolBar, QVBoxLayout, QWidget,
 )
 
 from .. import __version__
@@ -33,6 +37,7 @@ from ..display import apply_orientation, auto_window, compute_saturation_stats, 
 from ..integrity import build_integrity_report, write_integrity_json
 from ..models import ChannelSettings, ImageRef, Project, SaturationStats
 from ..readers import IMPORT_FILE_FILTER, ImageSource, UnsupportedImageError, open_image
+from ..render import PanelRenderer
 from ..storage import (
     HashCancelled, RefStatus, RelinkError, Workspace, add_image_to_dataset, check_image,
     common_prefix_change, copy_into_project, create_dataset, log_operation, register_image,
@@ -40,6 +45,9 @@ from ..storage import (
     set_dataset_hidden, set_image_annotation, set_image_hash, sha256_file, write_thumbnail,
 )
 from .channel_controls import ChannelControls
+from .figures_tab import FiguresTab
+from .home_tab import HomeTab
+from .info_tabs import AboutTab, PreferencesTab
 from .library_panel import LibraryPanel
 from .workers import HashQueue
 from .zoomable_graphics_view import ZoomableGraphicsView
@@ -93,6 +101,7 @@ class MainWindow(QMainWindow):
         self._render_timer.setInterval(15)
         self._render_timer.timeout.connect(self._render)
 
+        self.renderer = PanelRenderer(lambda ref: self.ws.resolve_image_path(self.project, ref))
         self._build_ui()
         self._build_toolbar()
         self.statusBar().showMessage(f"Pycrograph {__version__} — workspace {self.ws.root}")
@@ -105,6 +114,44 @@ class MainWindow(QMainWindow):
 
     # ================================================================== UI
     def _build_ui(self) -> None:
+        self.tabs = QTabWidget()
+        self.tabs.setDocumentMode(True)
+
+        self.home = HomeTab()
+        self.home.set_lister(lambda archived: self.ws.list_projects(include_archived=archived))
+        self.home.new_project_requested.connect(self.new_project)
+        self.home.open_project_requested.connect(self._open_from_home)
+        self.home.archive_requested.connect(self._archive_from_home)
+        self.home.figure_requested.connect(self.show_figure)
+        self.home.new_figure_requested.connect(self._new_figure_from_home)
+        self.tabs.addTab(self.home, "Home")
+
+        self.library_tab = self._build_library_tab()
+        self.tabs.addTab(self.library_tab, "Library")
+
+        self.figures_tab = FiguresTab(self.renderer, save=self.save,
+                                      before_gesture=self.flush_pending)
+        self.figures_tab.status_message.connect(lambda m: self.statusBar().showMessage(m, 4000))
+        self.tabs.addTab(self.figures_tab, "Figures")
+
+        self.preferences_tab = PreferencesTab()
+        self.tabs.addTab(self.preferences_tab, "Preferences")
+        self.about_tab = AboutTab()
+        self.tabs.addTab(self.about_tab, "About")
+
+        self.tabs.currentChanged.connect(self._on_tab_changed)
+        self.setCentralWidget(self.tabs)
+        self.home.refresh_requested()
+        self.home.set_open_project(None)
+
+    def _on_tab_changed(self, _index: int) -> None:
+        self.flush_pending()                    # a gesture never spans two tabs
+        w = self.tabs.currentWidget()
+        if w is self.home:
+            self.home.refresh_requested()
+            self.home.set_open_project(self.project)
+
+    def _build_library_tab(self) -> QWidget:
         split = QSplitter(Qt.Horizontal)
 
         self.library = LibraryPanel()
@@ -167,9 +214,9 @@ class MainWindow(QMainWindow):
         split.setStretchFactor(1, 1)
         split.setStretchFactor(2, 0)
         split.setSizes([320, 700, 400])
-        self.setCentralWidget(split)
         self._show_placeholder("Create a project (New Project…) and import MetaMorph TIFF/STK files.")
         self._rebuild_inspector()
+        return split
 
     def _build_toolbar(self) -> None:
         tb = QToolBar("Main")
@@ -193,6 +240,9 @@ class MainWindow(QMainWindow):
         self.a_dataset = act("New Dataset…", self.new_dataset)
         self.a_import = act("Import Images…", lambda: self.import_images(),
                             "Register files by reference (no copy). SHA-256 computed in background.")
+        self.a_add_to_figure = act("Add to Figure", self.add_selected_to_figure,
+                                   "Add the selected library image to the current figure "
+                                   "(copies its display settings)")
         tb.addSeparator()
         self.a_verify = act("Check Sources", self.check_all_sources,
                             "Check every image file (exists, size, date); re-hash the changed ones")
@@ -204,6 +254,7 @@ class MainWindow(QMainWindow):
         has = self.project is not None
         for a in (self.a_archive, self.a_dataset, self.a_import, self.a_verify, self.a_integrity):
             a.setEnabled(has)
+        self.a_add_to_figure.setEnabled(has and self.ref is not None)
         self.setWindowTitle(f"Pycrograph — {self.project.project.name}" if has else "Pycrograph")
 
     def _section(self, title: str) -> tuple[QFrame, QVBoxLayout]:
@@ -320,6 +371,7 @@ class MainWindow(QMainWindow):
         self.ws.set_project_archived(self.project, True)
         self._close_project()
         self._update_enabled()
+        self.home.refresh_requested()
 
     def _close_project(self) -> None:
         self.flush_pending()
@@ -328,6 +380,8 @@ class MainWindow(QMainWindow):
         self.project = None
         self.ref = None
         self._status.clear()
+        self.figures_tab.set_project(None)
+        self.home.set_open_project(None)
         self.library.set_project(None)
         self._rebuild_inspector()
         self._show_placeholder("No project open.")
@@ -335,6 +389,9 @@ class MainWindow(QMainWindow):
     def _after_project_opened(self) -> None:
         p = self.project
         self.library.set_project(p)
+        self.figures_tab.set_project(p)
+        self.home.set_open_project(p)
+        self.home.refresh_requested()
         self._update_enabled()
         for ref in p.images.values():
             thumb = self.ws.thumbnail_path(ref.id)
@@ -347,6 +404,52 @@ class MainWindow(QMainWindow):
     def save(self) -> None:
         if self.project is not None:
             self.ws.save_project(self.project)
+
+    def _open_from_home(self, project_id: str) -> None:
+        if self.project is None or self.project.project.id != project_id:
+            self.open_project_by_id(project_id)
+        if self.project is not None:
+            self.tabs.setCurrentWidget(self.library_tab)
+
+    def _archive_from_home(self, project_id: str, archived: bool) -> None:
+        if self.project is not None and self.project.project.id == project_id:
+            if archived:
+                self.archive_project()
+            else:
+                self.ws.set_project_archived(self.project, False)
+            self.home.refresh_requested()
+            return
+        try:
+            other = self.ws.load_project(project_id)
+        except (OSError, ValueError) as exc:
+            QMessageBox.critical(self, "Archive project", f"Cannot open project:\n{exc}")
+            return
+        self.ws.set_project_archived(other, archived)
+        self.home.refresh_requested()
+
+    # ============================================================= figures
+    def show_figure(self, figure_id: str) -> None:
+        self.figures_tab.select_figure(figure_id)
+        self.tabs.setCurrentWidget(self.figures_tab)
+
+    def _new_figure_from_home(self) -> None:
+        fig = self.figures_tab.new_figure()
+        if fig is not None:
+            self.home.set_open_project(self.project)
+            self.show_figure(fig.id)
+
+    def add_to_figure(self, image_ids: list[str]) -> list:
+        """Library → figure: one panel per image with a copy of its current
+        display settings (pending library edits are committed first)."""
+        self.flush_pending()
+        panels = self.figures_tab.add_images(image_ids)
+        if panels:
+            self.tabs.setCurrentWidget(self.figures_tab)
+        return panels
+
+    def add_selected_to_figure(self) -> None:
+        if self.ref is not None:
+            self.add_to_figure([self.ref.id])
 
     # ============================================================ datasets
     def new_dataset(self) -> None:
@@ -524,6 +627,8 @@ class MainWindow(QMainWindow):
             self.hashq.submit(ident, self.ws.resolve_image_path(p, ref))
         elif action == "copy_into":
             self.copy_into(ident)
+        elif action == "add_to_figure":
+            self.add_to_figure([ident])
         elif action == "add_to_dataset":
             names = [d.name for d in p.datasets if not d.hidden]
             choice, ok = QInputDialog.getItem(self, "Add to dataset", "Dataset:", names, 0, False)
@@ -578,6 +683,8 @@ class MainWindow(QMainWindow):
                 QApplication.restoreOverrideCursor()
             self.statusBar().showMessage(f"Relinked {len(done) + 1} image(s)")
         self.save()
+        self.renderer.invalidate()
+        self.figures_tab.refresh()
         self.check_all_sources(quiet=True)
         if self.ref is not None and self.ref.id == image_id:
             self._on_image_selected(image_id)
@@ -625,6 +732,7 @@ class MainWindow(QMainWindow):
         self.flush_pending()
         self._close_source()
         self.ref = self.project.images.get(image_id) if (self.project and image_id) else None
+        self._update_enabled()
         self._rebuild_inspector()
         ref = self.ref
         if ref is None:
@@ -858,15 +966,12 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(f"Integrity report written: {path}", 6000)
 
     def show_about(self) -> None:
-        QMessageBox.about(
-            self, "About Pycrograph",
-            f"<b>Pycrograph {__version__}</b><br>Publication figures from fluorescence microscopy "
-            "images — non-destructive, provenance-tracked.<br>Sister app of PysternBlot.<br><br>"
-            "Etienne Boulter (IRCAN, Inserm/CNRS/Université Côte d'Azur)<br>License: GPL-3.0-only")
+        self.tabs.setCurrentWidget(self.about_tab)
 
     # ============================================================ closing
     def closeEvent(self, event) -> None:
         self.flush_pending()
         self.hashq.cancel_all()
         self._close_source()
+        self.renderer.close()
         super().closeEvent(event)

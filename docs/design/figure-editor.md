@@ -237,6 +237,9 @@ Bump `PROJECT_FORMAT_VERSION` to 2 with a migration (`Figure.page` → `PageSetu
 1. **Tabs refactor + models v2 + read-only canvas**: Home/Library/Figures/Preferences/About;
    `PageSetup`, page rendered at journal width; panels drawn with `PanelRenderer`; select,
    move, resize, multi-select, delete, undo/redo; "Add to figure" from the library.
+   *Done.* Resize keeps the image aspect ratio and leaves the crop unchanged (scales the
+   image); the §2.4 behaviour (resize extends the crop at constant µm/mm) comes with the
+   viewport controls in step 2. §7.2 taken as snapshot at creation; §7.4 as a dropdown.
 2. **Preview tab**: channel controls for the selection (mixed states), T/Z + projection,
    viewport pan/zoom (crop), rotation/flips, copy/paste rendering and viewport,
    reset/save image defaults, replace image.
