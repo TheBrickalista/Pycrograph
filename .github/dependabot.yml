@@ -1,0 +1,109 @@
+version: 2
+updates:
+  # Keep GitHub Actions pinned SHAs up to date
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Europe/Paris"
+    groups:
+      actions:
+        patterns:
+          - "*"
+    commit-message:
+      prefix: "ci"
+    # github-actions supports default-days only (no semver-*-days).
+    cooldown:
+      default-days: 14
+
+  # Keep uv.lock up to date. lockfile-only: the pyproject.toml floors are
+  # raised by hand only. ci/ holds hand-maintained hashed pins.
+  - package-ecosystem: "uv"
+    directory: "/"
+    versioning-strategy: "lockfile-only"
+    exclude-paths:
+      - "ci/**"
+    ignore:
+      # [build-system] requirement: lockfile-only cannot update it
+      # ("No files have changed!"). Bumped by hand.
+      - dependency-name: "setuptools"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Europe/Paris"
+    groups:
+      python-dependencies:
+        patterns:
+          - "*"
+    commit-message:
+      prefix: "deps"
+    cooldown:
+      default-days: 14
+      semver-major-days: 14
+      semver-minor-days: 14
+      semver-patch-days: 14
+
+  # ci/ holds hand-maintained hashed locks (ci/requirements-min.*,
+  # ci/build-constraints.*), compiled from the repo root with `uv pip
+  # compile`. The dependency graph detects them both as uv (compile header)
+  # and as pip (*.txt / *.in), and security updates cover every detected
+  # manifest. The root entry's exclude-paths does not reach /ci, so without
+  # these entries Dependabot recompiles the locks from inside ci/ (losing the
+  # ci/ prefix in "# via -r" lines) and the PR fails CI. GitHub's docs say
+  # exclude-paths is relative to `directory`, its changelog says relative to
+  # the repo root, so each file is listed both ways; open-pull-requests-limit:
+  # 0 disables version updates. requirements-min.txt is pip-audited in the
+  # `minimum` job; build-constraints.txt is kept in step with setuptools in
+  # uv.lock.
+  - package-ecosystem: "uv"
+    directory: "/ci"
+    exclude-paths:
+      - "requirements-min.in"
+      - "requirements-min.txt"
+      - "build-constraints.in"
+      - "build-constraints.txt"
+      - "ci/requirements-min.in"
+      - "ci/requirements-min.txt"
+      - "ci/build-constraints.in"
+      - "ci/build-constraints.txt"
+    open-pull-requests-limit: 0
+    schedule:
+      interval: "weekly"
+
+  - package-ecosystem: "pip"
+    directory: "/ci"
+    exclude-paths:
+      - "requirements-min.in"
+      - "requirements-min.txt"
+      - "build-constraints.in"
+      - "build-constraints.txt"
+      - "ci/requirements-min.in"
+      - "ci/requirements-min.txt"
+      - "ci/build-constraints.in"
+      - "ci/build-constraints.txt"
+    open-pull-requests-limit: 0
+    schedule:
+      interval: "weekly"
+
+  # Read the Docs build requirements (docs/requirements.txt)
+  - package-ecosystem: "pip"
+    directory: "/docs"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Europe/Paris"
+    groups:
+      docs-dependencies:
+        patterns:
+          - "*"
+    commit-message:
+      prefix: "deps"
+    cooldown:
+      default-days: 14
+      semver-major-days: 14
+      semver-minor-days: 14
+      semver-patch-days: 14
