@@ -8,4 +8,5 @@ provenance-tracked. Sister app of [PysternBlot](https://github.com/TheBrickalist
 
 quickstart
 ARCHITECTURE
+design/figure-editor
 ```
