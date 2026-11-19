@@ -20,9 +20,10 @@ Size changes follow the viewport rules (§2.4, viewport.py):
 
 Auto-layouts copy a source panel (rendering, crop, size, T/Z) and put the
 new panels below everything on the page. Every panel of one auto-layout
-shares one ``lock_group`` (``split:…``, ``montage:…``, ``grid:…``). Locks
-are matched by channel index, so one group covers both the rows and the
-columns of a condition grid.
+shares one ``lock_group`` (``split:…``, ``montage:…``, ``grid:…``; a
+condition grid that keeps each image's rendering has one group per row).
+Locks are matched by channel index, so one group covers both the rows and
+the columns of a condition grid.
 """
 
 from __future__ import annotations
@@ -312,19 +313,52 @@ def montage(source: Panel, ref: ImageRef, axis: Literal["t", "z"], indices: Sequ
     return out
 
 
+def label_band_mm(font_size_pt: float) -> float:
+    """Room to leave for one line of outside labels (estimate without Qt:
+    1.3 em line height + the 0.5 mm label gap of ui/panel_overlays)."""
+    return round(font_size_pt * 25.4 / 72.0 * 1.3 + 0.5, 3)
+
+
 def condition_grid(sources: Sequence[tuple[Panel, ImageRef]], x: float, y: float,
-                   gap_mm: float = DEFAULT_GAP_MM) -> list[list[Optional[Panel]]]:
+                   gap_mm: float = DEFAULT_GAP_MM, own_rendering: bool = False,
+                   row_label: Optional[str] = "[image]",
+                   column_label: Optional[str] = "[channels]",
+                   label_space_mm: float = 0.0) -> list[list[Optional[Panel]]]:
     """Rows = the sources (one per condition/image), columns = channel
     configurations (each channel, then the merge). Cell size = the first
-    source's panel size; each row keeps its own source's rendering and
-    viewport. A row whose image has fewer channels leaves empty cells."""
+    source's panel size. A row whose image has fewer channels leaves empty
+    cells.
+
+    Rendering: by default every row takes the FIRST row's per-channel
+    black / white / gamma / LUT / invert, matched by channel index and
+    clamped to each image's bit depth (conditions are compared with the
+    same display); the whole grid is one lock group. With
+    own_rendering=True each row keeps its source's rendering and each row
+    is its own lock group (a grid-wide lock would contradict the differing
+    rows). Crop, T/Z and projection always stay per row (per image).
+
+    Labels: the source's labels are copied into every cell; `row_label`
+    (e.g. "[kv:Condition]" or "[image]") is added left of the first cell of
+    each row (left-vertical), `column_label` above the topmost cell of each
+    column. None = no such labels. `label_space_mm` (see label_band_mm)
+    is reserved left of the grid for row labels and above it for column
+    labels, so they stay on the page and clear of the panels above."""
+    from .figures import LOCKED_FIELDS, apply_locked       # avoid an import cycle
+    from .models import PanelLabel
     if not sources:
         return []
-    group = f"grid:{_id()}"
+    gid = _id()
+    if row_label:
+        x += label_space_mm
+    if column_label:
+        y += label_space_mm
     w0, h0 = sources[0][0].width_mm, sources[0][0].height_mm
+    first_rendering = {(c.index, f): getattr(c, f) for c in sources[0][0].channels
+                       for f in LOCKED_FIELDS}
     n_cols = max(len(channel_configs(r)) for _p, r in sources)
     rows: list[list[Optional[Panel]]] = []
     for i, (src, ref) in enumerate(sources):
+        group = f"grid:{gid}:row{i + 1}" if own_rendering else f"grid:{gid}"
         configs = channel_configs(ref)
         merge_col = n_cols - 1
         row: list[Optional[Panel]] = [None] * n_cols
@@ -337,7 +371,19 @@ def condition_grid(sources: Sequence[tuple[Panel, ImageRef]], x: float, y: float
             scale_panel(p, w0 / p.width_mm)
             V.resize(p, s.X, s.Y, w0, h0)
             p.width_mm, p.height_mm = w0, h0
+            if not own_rendering and i > 0:
+                apply_locked(p, ref, first_rendering)
             _apply_config(p, ref, config)
             row[j] = p
+        first = next(c for c in row if c is not None)
+        if row_label:
+            first.labels.append(PanelLabel(text=row_label, position="left-vertical"))
         rows.append(row)
+    if column_label:
+        # On the topmost cell of each column (the first row may have fewer
+        # channels than a later one).
+        for j in range(n_cols):
+            top = next((r[j] for r in rows if r[j] is not None), None)
+            if top is not None:
+                top.labels.append(PanelLabel(text=column_label, position="top"))
     return rows

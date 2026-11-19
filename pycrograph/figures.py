@@ -39,7 +39,10 @@ from contextlib import contextmanager
 from typing import Any, Callable, Iterable, Iterator, Optional
 
 from . import viewport
-from .models import ChannelSettings, Crop, Figure, ImageRef, PageSetup, Panel, Project, ZProjection
+from .models import (
+    ChannelSettings, Crop, Figure, ImageRef, PageSetup, Panel, PanelBorder, PanelLabel, Project,
+    ScaleBar, ZProjection,
+)
 from .storage import log_operation
 
 DEFAULT_PANEL_WIDTH_MM = 40.0
@@ -337,17 +340,28 @@ class FigureEditor:
 
     def edit(self, panel_ids: Iterable[str], fn: Callable[[Panel, ImageRef], bool],
              operation: str = "figure.panel.set", label: str = "Edit panel(s)",
-             key: Optional[str] = None, final: bool = True) -> tuple[int, int]:
+             key: Optional[str] = None, final: bool = True, propagate: bool = True,
+             lock_values: Optional[dict[tuple[int, str], Any]] = None) -> tuple[int, int]:
         """Apply fn(panel, ref) to each panel; fn returns False to skip a
         panel (e.g. its image lacks that channel). With final=False the
         gesture stays open across calls with the same `key` (slider ticks)
         and is committed by flush() or by the next final call.
-        Returns (applied, skipped)."""
+
+        Lock groups (propagate=True): locked channel settings changed by fn
+        on a panel are applied to the same channel of every other panel of
+        its lock group, in the same gesture (see propagate_locks).
+        `lock_values` gives the intended values, e.g. a typed White that fn
+        clamped on a lower bit-depth image. `self.last_propagated` = ids of
+        panels changed by propagation only. Returns (applied, skipped)."""
         key = key or label
         if self._live is not None and self._live[3] != key:
             self.flush()
         if self._live is None:
             self._live = (snapshot(self.figure), operation, label, key)
+        panel_ids = list(panel_ids)
+        pre = {pid: locked_state(p) for pid in panel_ids
+               if (p := self.figure.panel(pid)) is not None and p.lock_group}
+        self.last_propagated: list[str] = []
         applied = skipped = 0
         try:
             for pid in panel_ids:
@@ -360,6 +374,9 @@ class FigureEditor:
                     skipped += 1
                 else:
                     applied += 1
+            if propagate and pre:
+                self.last_propagated = propagate_locks(self.figure, self.project.images,
+                                                       panel_ids, pre, lock_values)
         except BaseException:
             before = self._live[0]
             self._live = None
@@ -470,6 +487,82 @@ class FigureEditor:
 # does the logging).
 
 CHANNEL_FIELDS = ("visible", "lut", "black", "white", "gamma", "invert")
+# What a lock group shares, per channel index (design §7.3). Never
+# visibility, T/Z, projection, crop, orientation or labels.
+LOCKED_FIELDS = ("lut", "black", "white", "gamma", "invert")
+
+
+def locked_state(panel: Panel) -> dict[tuple[int, str], Any]:
+    return {(c.index, f): getattr(c, f) for c in panel.channels for f in LOCKED_FIELDS}
+
+
+def lock_members(figure: Figure, group: Optional[str]) -> list[Panel]:
+    return [p for p in figure.panels if group and p.lock_group == group]
+
+
+def apply_locked(panel: Panel, ref: ImageRef, values: dict[tuple[int, str], Any]) -> bool:
+    """Set locked fields on one panel; channels it lacks are skipped; levels
+    clamped to its own bit depth. Returns True if anything was applied."""
+    by_channel: dict[int, dict[str, Any]] = {}
+    for (idx, field), v in values.items():
+        by_channel.setdefault(idx, {})[field] = v
+    used = False
+    for idx, fields in sorted(by_channel.items()):
+        if idx >= ref.metadata.shape.C:
+            continue
+        used = True
+        cs = panel_channel(panel, idx)
+        if "black" in fields or "white" in fields:
+            black = fields.get("black", cs.black if cs else 0)
+            white = fields.get("white", cs.white if cs else ref.metadata.full_scale)
+            set_levels(panel, ref, idx, black, white)
+        for f in ("lut", "gamma", "invert"):
+            if f in fields:
+                set_channel_field(panel, ref, idx, f, fields[f])
+    return used
+
+
+def propagate_locks(figure: Figure, images: dict[str, ImageRef], edited: list[str],
+                    pre: dict[str, dict], intended: Optional[dict] = None) -> list[str]:
+    """After an edit: for each lock group, the locked channel fields that
+    changed on the FIRST edited panel of the group (or `intended` values
+    for those fields) are applied to every other member. Returns the ids
+    of members changed that were not themselves edited."""
+    done_groups: set[str] = set()
+    propagated: list[str] = []
+    for pid in edited:
+        if pid not in pre:
+            continue
+        p = figure.panel(pid)
+        if p is None or not p.lock_group or p.lock_group in done_groups:
+            continue
+        post = locked_state(p)
+        changed = {k: v for k, v in post.items() if pre[pid].get(k) != v}
+        if not changed:
+            continue
+        done_groups.add(p.lock_group)
+        if intended:            # the typed value, not this panel's clamped copy of it
+            changed.update({k: v for k, v in intended.items() if k in changed})
+        for m in lock_members(figure, p.lock_group):
+            ref = images.get(m.image_id)
+            if m.id == p.id or ref is None:
+                continue
+            before = locked_state(m)
+            apply_locked(m, ref, changed)
+            if locked_state(m) != before and m.id not in edited:
+                propagated.append(m.id)
+    return propagated
+
+
+def lock_panels(panels: list[Panel], images: dict[str, ImageRef], group: str) -> None:
+    """Put panels in one lock group; the others take the first panel's
+    locked channel settings (so the group starts consistent)."""
+    first = panels[0]
+    values = locked_state(first)
+    for p in panels:
+        p.lock_group = group
+        if p is not first and p.image_id in images:
+            apply_locked(p, images[p.image_id], values)
 
 
 def panel_channel(panel: Panel, index: int) -> Optional[ChannelSettings]:
@@ -656,3 +749,69 @@ def replace_image(panel: Panel, new: ImageRef) -> None:
     for c in panel.channels:
         c.white = min(c.white, fs)
         c.black = min(c.black, c.white - 1)
+
+
+# ================================================================== Labels
+# Operations for FigureEditor.edit() on all selected panels. A label is
+# identified across panels by (text, position): editing or deleting a row
+# of the Labels tab acts on every selected panel holding that label.
+
+LabelKey = tuple[str, str]
+
+
+def label_key(label: PanelLabel) -> LabelKey:
+    return label.text, label.position
+
+
+def add_label(panel: Panel, ref: ImageRef, label: PanelLabel) -> bool:
+    """Append a copy; skipped if the panel already has the same label."""
+    if any(label_key(lb) == label_key(label) for lb in panel.labels):
+        return False
+    panel.labels.append(label.model_copy(deep=True))
+    return True
+
+
+def update_labels(panel: Panel, ref: ImageRef, key: LabelKey, fields: dict[str, Any]) -> bool:
+    found = False
+    for i, lb in enumerate(panel.labels):
+        if label_key(lb) == key:
+            panel.labels[i] = PanelLabel.model_validate({**lb.model_dump(), **fields})
+            found = True
+    return found
+
+
+def delete_labels(panel: Panel, ref: ImageRef, key: LabelKey) -> bool:
+    n = len(panel.labels)
+    panel.labels = [lb for lb in panel.labels if label_key(lb) != key]
+    return len(panel.labels) != n
+
+
+def set_scale_bar(panel: Panel, ref: ImageRef, fields: dict[str, Any]) -> bool:
+    """Skipped (False) for uncalibrated images: they cannot show a bar."""
+    if not ref.metadata.calibration.is_calibrated:
+        return False
+    panel.scale_bar = ScaleBar.model_validate({**panel.scale_bar.model_dump(), **fields})
+    return True
+
+
+def set_border(panel: Panel, ref: ImageRef, fields: dict[str, Any]) -> bool:
+    panel.border = PanelBorder.model_validate({**panel.border.model_dump(), **fields})
+    return True
+
+
+def copy_panels(panels: Iterable[Panel]) -> list[dict]:
+    return [p.model_dump(mode="json") for p in panels]
+
+
+def pasted_panels(copied: list[dict], offset_mm: float = 5.0) -> list[Panel]:
+    """New panels from copied ones: new ids, shifted by offset_mm, labels
+    and every setting kept; not in any lock group, not an inset (they are
+    independent panels until locked again)."""
+    out = []
+    for d in copied:
+        p = Panel.model_validate(d)
+        out.append(p.model_copy(update={
+            "id": new_id(), "x_mm": round(p.x_mm + offset_mm, 6),
+            "y_mm": round(p.y_mm + offset_mm, 6), "lock_group": None,
+            "inset_of": None, "inset_style": None}))
+    return out

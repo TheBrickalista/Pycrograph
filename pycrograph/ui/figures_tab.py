@@ -36,12 +36,14 @@ from .. import figures as F
 from .. import layout as L
 from .. import viewport as V
 from ..figures import FigureEditor, create_figure, next_figure_name, rename_figure
-from ..models import Figure, ImageRef, Panel, Project
+from ..models import Figure, ImageRef, Panel, PanelLabel, Project
 from ..render import PanelRenderer, RenderError, crop_bounds
 from ..preferences import Preferences
-from .figure_canvas import FigureCanvas, PanelVisual
+from .figure_canvas import FigureCanvas, PanelItem, PanelVisual
+from .labels_inspector import LabelsInspector
 from .page_setup import PageSetupDialog
 from .panel_inspector import PreviewInspector
+from .panel_overlays import build_overlays
 
 CANVAS_MAX_SIDE = 1024      # on-screen decimation (integer stride, no interpolation)
 IDLE_COMMIT_MS = 700        # same as the library / PysternBlot gesture commit
@@ -64,6 +66,8 @@ class FiguresTab(QWidget):
         self.project: Optional[Project] = None
         self._editors: dict[str, FigureEditor] = {}
         self.clip_rendering: Optional[list[dict]] = None
+        self.clip_panels: Optional[list[dict]] = None
+        self._last_missing: tuple = ()
         self.clip_viewport: Optional[dict] = None
         self._idle = QTimer(self)
         self._idle.setSingleShot(True)
@@ -132,13 +136,28 @@ class FiguresTab(QWidget):
         split = QSplitter(Qt.Horizontal)
         self.canvas = FigureCanvas()
         self.canvas.set_commit_callback(self._on_geometry_commit)
+        self.canvas.set_overlay_builder(self._build_overlays)
+        # Panel copy/paste: shortcuts on the canvas only, so Ctrl+C / Ctrl+V
+        # keep working on text in the inspector fields.
+        self.a_copy_panels = QAction("Copy Panels", self.canvas)
+        self.a_copy_panels.setShortcut(QKeySequence.Copy)
+        self.a_copy_panels.setShortcutContext(Qt.WidgetShortcut)
+        self.a_copy_panels.triggered.connect(self.copy_panels)
+        self.a_paste_panels = QAction("Paste Panels", self.canvas)
+        self.a_paste_panels.setShortcut(QKeySequence.Paste)
+        self.a_paste_panels.setShortcutContext(Qt.WidgetShortcut)
+        self.a_paste_panels.triggered.connect(self.paste_panels)
+        self.canvas.addAction(self.a_copy_panels)
+        self.canvas.addAction(self.a_paste_panels)
         self.canvas.nudge_requested.connect(self.nudge)
         self.canvas.selection_changed.connect(self._on_selection_changed)
         split.addWidget(self.canvas)
         self.inspector_tabs = QTabWidget()
         self.inspector = PreviewInspector(self)
         self.info = QTextBrowser()
+        self.labels_inspector = LabelsInspector(self)
         self.inspector_tabs.addTab(self.inspector, "Preview")
+        self.inspector_tabs.addTab(self.labels_inspector, "Labels")
         self.inspector_tabs.addTab(self.info, "Info")
         self.inspector_tabs.setMinimumWidth(400)
         split.addWidget(self.inspector_tabs)
@@ -213,7 +232,10 @@ class FiguresTab(QWidget):
         menu_button("Auto ▾", [
             ("split_channels", "Split channels", self.split_channels),
             ("montage", "Montage of T or Z…", self.montage_dialog),
-            ("condition_grid", "Condition grid", self.condition_grid),
+            ("condition_grid", "Condition grid (shared rendering)…",
+             lambda: self.condition_grid_dialog(own_rendering=False)),
+            ("condition_grid_own", "Condition grid (keep each image's rendering)…",
+             lambda: self.condition_grid_dialog(own_rendering=True)),
         ])
         bar.addStretch(1)
         return bar
@@ -239,7 +261,7 @@ class FiguresTab(QWidget):
                 "align_hcentre": 2, "align_vcentre": 2, "distribute_h": 3, "distribute_v": 3,
                 "grid": 1, "same_width": 2, "same_height": 2, "same_both": 2,
                 "align_magnification": 2, "split_channels": 1, "montage": 1,
-                "condition_grid": 1}
+                "condition_grid": 1, "condition_grid_own": 1}
         for key, a in getattr(self, "layout_actions", {}).items():
             a.setEnabled(fig is not None and (key == "page_setup" or n >= need.get(key, 1)))
 
@@ -322,8 +344,11 @@ class FiguresTab(QWidget):
 
     def apply(self, fn: Callable[[Panel, ImageRef], bool], label: str, key: Optional[str] = None,
               final: bool = True, what: str = "", operation: str = "figure.panel.set",
-              panel_ids: Optional[list[str]] = None) -> tuple[int, int]:
-        """Apply fn to every selected panel (FigureEditor.edit) and redraw."""
+              panel_ids: Optional[list[str]] = None, propagate: bool = True,
+              lock_values: Optional[dict] = None) -> tuple[int, int]:
+        """Apply fn to every selected panel (FigureEditor.edit, which also
+        propagates locked channel settings to lock-group members) and
+        redraw."""
         ed = self.current_editor()
         if ed is None:
             return 0, 0
@@ -332,16 +357,24 @@ class FiguresTab(QWidget):
             return 0, 0
         if not ed.has_pending:
             self._before_gesture()
-        applied, skipped = ed.edit(ids, fn, operation, label, key=key, final=final)
+        applied, skipped = ed.edit(ids, fn, operation, label, key=key, final=final,
+                                   propagate=propagate, lock_values=lock_values)
         if final:
             self._idle.stop()
         else:
             self._idle.start()
+        notes = []
         if skipped:
-            self.status_message.emit(f"{label}: {skipped} panel(s) skipped"
-                                     + (f" ({what})" if what else ""))
-        self.canvas.update_items(self._visual, ids)
+            notes.append(f"{skipped} panel(s) skipped" + (f" ({what})" if what else ""))
+        if ed.last_propagated:
+            notes.append(f"also applied to {len(ed.last_propagated)} locked panel(s)")
+        if notes:
+            self.status_message.emit(f"{label}: " + "; ".join(notes))
+        self.canvas.update_items(self._visual, ids + ed.last_propagated)
         self.inspector.refresh_values(channels=final)
+        if final:
+            self.labels_inspector.refresh()
+            self._report_missing()
         self._update_info()
         self._update_enabled()
         return applied, skipped
@@ -451,6 +484,7 @@ class FiguresTab(QWidget):
 
     def _sync_after_geometry(self, ids: list[str]) -> None:
         self.canvas.update_items(self._visual, ids)
+        self.labels_inspector.refresh()
         self.inspector.refresh_values()
         self.inspector.refresh_planes()
         self._update_info()
@@ -591,7 +625,11 @@ class FiguresTab(QWidget):
         if ok and indices:
             self.montage(axis.lower(), indices, direction)
 
-    def condition_grid(self) -> None:
+    def condition_grid(self, own_rendering: bool = False,
+                       row_label: Optional[str] = "[image]") -> None:
+        """Rows = images of the selected panels (figure order), columns =
+        each channel then the merge. By default every row takes the first
+        row's rendering; own_rendering keeps each image's."""
         gap = self.gap_spin.value()
 
         def fn(ps, refs):
@@ -602,9 +640,134 @@ class FiguresTab(QWidget):
                     seen.add(p.image_id)
                     sources.append((p, refs[p.image_id]))
             x, y = self._origin(self.current_figure(), ps[0].page)
-            rows = L.condition_grid(sources, x, y, gap)
+            fig = self.current_figure()
+            rows = L.condition_grid(sources, x, y, gap, own_rendering=own_rendering,
+                                    row_label=row_label,
+                                    label_space_mm=L.label_band_mm(fig.page.preset.font_size_pt))
             self.current_figure().panels.extend(p for row in rows for p in row if p is not None)
         self._layout(fn, "figure.layout.condition_grid", "Condition grid", select_new=True)
+
+    def condition_grid_dialog(self, own_rendering: bool = False) -> None:
+        sel = self.selected_panels()
+        if not sel:
+            return
+        keys = sorted({k for p in sel for k in (self.ref(p).key_values if self.ref(p) else {})})
+        choices = ["[image]"] + [f"[kv:{k}]" for k in keys] + ["(no row labels)"]
+        choice, ok = QInputDialog.getItem(self, "Condition grid", "Row labels:", choices, 0, False)
+        if ok:
+            self.condition_grid(own_rendering, None if choice.startswith("(") else choice)
+
+    # ============================================================== labels
+    def add_label(self, text: str, position: str = "top", font_size_pt: Optional[float] = None,
+                  color: Optional[str] = None, font_family: Optional[str] = None) -> tuple[int, int]:
+        if not text.strip():
+            return 0, 0
+        label = PanelLabel(text=text, position=position, font_size_pt=font_size_pt,
+                           color=color, font_family=font_family)
+        return self.apply(lambda p, r: F.add_label(p, r, label), "Add label",
+                          what="already labelled", operation="figure.label.add")
+
+    def update_label(self, key: tuple[str, str], **fields) -> tuple[int, int]:
+        return self.apply(lambda p, r: F.update_labels(p, r, key, fields), "Edit label",
+                          what="label absent", operation="figure.label.set")
+
+    def delete_label(self, key: tuple[str, str]) -> tuple[int, int]:
+        return self.apply(lambda p, r: F.delete_labels(p, r, key), "Delete label",
+                          what="label absent", operation="figure.label.delete")
+
+    def kv_keys(self) -> list[str]:
+        return sorted({k for p in self.selected_panels() if (r := self.ref(p))
+                       for k in r.key_values})
+
+    def labels_from_kv(self, key: str, position: str = "top") -> tuple[int, int]:
+        """Add [kv:<key>] to every selected panel in one step."""
+        return self.add_label(f"[kv:{key}]", position)
+
+    def labels_from_kv_dialog(self) -> None:
+        keys = self.kv_keys()
+        if not keys:
+            QMessageBox.information(self, "Labels from key–value",
+                                    "The selected panels' images have no key–value pairs "
+                                    "(add them in the Library).")
+            return
+        key, ok = QInputDialog.getItem(self, "Labels from key–value", "Key:", keys, 0, False)
+        if ok:
+            self.labels_from_kv(key, self.labels_inspector.position_combo.currentText())
+
+    def set_scale_bar(self, **fields) -> tuple[int, int]:
+        return self.apply(lambda p, r: F.set_scale_bar(p, r, fields), "Scale bar",
+                          what="no spatial calibration", operation="figure.scalebar.set")
+
+    def set_border(self, **fields) -> tuple[int, int]:
+        return self.apply(lambda p, r: F.set_border(p, r, fields), "Border",
+                          operation="figure.border.set")
+
+    def missing_tokens(self, panel_ids: Optional[list[str]] = None) -> list[str]:
+        items = [it for it in self.canvas.figure_scene.panel_items()
+                 if panel_ids is None or it.panel_id in panel_ids]
+        return list(dict.fromkeys(t for it in items for t in it.missing))
+
+    def _report_missing(self) -> None:
+        """Unresolved tokens are never silent: status bar when they change."""
+        missing = tuple(self.missing_tokens())
+        if missing and missing != self._last_missing:
+            self.status_message.emit(f"Labels: {len(missing)} value(s) not found, drawn as “?”: "
+                                     + ", ".join(missing))
+        self._last_missing = missing
+
+    def _build_overlays(self, item: PanelItem, panel: Panel) -> None:
+        fig = self.current_figure()
+        if fig is not None:
+            build_overlays(item, panel, self.ref(panel), self.project, fig)
+
+    # ======================================================== panel clipboard
+    def copy_panels(self) -> int:
+        sel = self.selected_panels()
+        if sel:
+            self.clip_panels = F.copy_panels(sel)
+            self.status_message.emit(f"{len(sel)} panel(s) copied")
+        return len(sel)
+
+    def paste_panels(self) -> list[str]:
+        """Copies of the copied panels (labels, rendering, viewport...), 5 mm
+        down-right, not locked; one gesture."""
+        ed = self.current_editor()
+        if ed is None or not self.clip_panels:
+            return []
+        self.flush()
+        self._before_gesture()
+        new = F.pasted_panels(self.clip_panels)
+        with ed.gesture("figure.panel.paste", f"Paste {len(new)} panel(s)"):
+            ed.figure.panels.extend(new)
+        self.refresh(selected={p.id for p in new})
+        return [p.id for p in new]
+
+    # ================================================================ locks
+    def lock_selection(self) -> Optional[str]:
+        """One lock group for the selection; the others take the first
+        panel's locked channel settings."""
+        sel = self.selected_panels()
+        if len(sel) < 2:
+            return None
+        group = f"lock:{F.new_id()}"
+        images = self.project.images
+        self._layout(lambda ps, _r: F.lock_panels(ps, images, group), "figure.lock.set",
+                     "Lock", min_sel=2)
+        self.inspector.set_panels(self.selected_panels())
+        return group
+
+    def unlock_selection(self) -> None:
+        def fn(ps, _r):
+            for p in ps:
+                p.lock_group = None
+        self._layout(fn, "figure.lock.clear", "Unlock")
+        self.inspector.set_panels(self.selected_panels())
+
+    def select_lock_group(self) -> None:
+        fig = self.current_figure()
+        groups = {p.lock_group for p in self.selected_panels() if p.lock_group}
+        if fig is not None and groups:
+            self.canvas.select_ids(p.id for p in fig.panels if p.lock_group in groups)
 
     # ===================================================== preview actions
     def copy_rendering(self) -> None:
@@ -678,7 +841,10 @@ class FiguresTab(QWidget):
         def do(p: Panel, _r: ImageRef) -> bool:
             F.replace_image(p, new)
             return True
-        self.apply(do, f"Replace image by {new.filename}", operation="figure.panel.replace_image")
+        # No lock propagation: the levels clamp to the new image's bit depth
+        # is not an edit to share with the group.
+        self.apply(do, f"Replace image by {new.filename}", operation="figure.panel.replace_image",
+                   propagate=False)
         self.inspector.set_panels(self.selected_panels())
         return True
 
@@ -719,12 +885,15 @@ class FiguresTab(QWidget):
         else:
             self.page_label.setText("")
         self.inspector.set_panels(self.selected_panels())
+        self.labels_inspector.set_panels(self.selected_panels())
+        self._report_missing()
         self._update_info()
         self._update_enabled()
 
     def _on_selection_changed(self, _ids: list) -> None:
         self.flush()                      # a gesture never spans two selections
         self.inspector.set_panels(self.selected_panels())
+        self.labels_inspector.set_panels(self.selected_panels())
         self._update_info()
         self._update_enabled()
 

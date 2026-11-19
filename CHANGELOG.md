@@ -6,7 +6,47 @@ All notable changes to Pycrograph are documented here. The format follows
 
 ## [Unreleased]
 
-Figure editor, steps 1 to 3 (docs/design/figure-editor.md §6).
+Figure editor, steps 1 to 4 (docs/design/figure-editor.md §6).
+
+### Added (step 4: labels, scale bar, border)
+- Labels tab: add / edit / delete labels on all selected panels; positions
+  top, bottom, left, right, left-vertical, right-vertical and the four inside
+  corners; outside labels stack without overlapping, inside labels keep a
+  margin (inside the border); font family and size from the page preset,
+  overridable per label; colour per label (auto: black outside, white inside).
+- Tokens resolved at render time: [channels] (stain or channel name, coloured
+  like its LUT), [time], [time:s], [time:min], [time:hh:mm] (with
+  Panel.time_offset_s), [z], [z:um] (with Panel.z_offset), [zoom], [image],
+  [dataset], [tags], [kv:Key]. Missing values are drawn as "?" and listed in
+  the status bar and the Labels tab.
+- "Labels from key–value…" adds [kv:<key>] to all selected panels at once.
+- Scale bar: length and unit (µm, nm, mm), corner, colour, thickness, text,
+  font size, text above / below; length follows zoom, resize, rotation and
+  Align magnification; greyed with the reason for uncalibrated images;
+  non-isotropic pixels use the axis along the bar (and say so).
+- Panel border (colour, width) drawn inside the panel edge.
+- Labels, scale bar and border are vector items in page mm, tagged by kind
+  for the export.
+- Copy / paste panels (Ctrl+C / Ctrl+V on the canvas): labels and settings
+  kept, pasted panels unlocked. Split channels, montage and condition grid
+  copy labels; the condition grid adds row labels ([image] or [kv:…]) and
+  [channels] column labels, with room reserved for them.
+
+### Added (lock groups)
+- Lock propagation: an edit of a channel's LUT, black, white, gamma or invert
+  on a locked panel applies to the same channel of every panel of its group
+  (clamped per image, panels lacking the channel skipped), in one gesture.
+  Visibility, T/Z, projection, crop, orientation and labels are never shared.
+- Preview tab: lock indicator, Lock selection (syncs to the first panel),
+  Unlock, Select group.
+
+### Changed (condition grid)
+- Rows take the first row's per-channel rendering by default (crop, T/Z and
+  projection stay per image); "Condition grid (keep each image's rendering)"
+  keeps them, with one lock group per row.
+
+### Changed (CI)
+- CodeQL analysis is skipped on private repositories.
 
 ### Added (step 3: layout)
 - Layout toolbar: align left / right / top / bottom / centres, distribute

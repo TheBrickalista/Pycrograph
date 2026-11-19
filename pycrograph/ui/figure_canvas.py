@@ -26,6 +26,9 @@ Interaction
   edge, then centre, then right/bottom, then the lower target). The selection moves as one block (same offset).
 - Arrow keys nudge the selection by 0.1 mm (Shift: 1 mm): the canvas
   emits `nudge_requested`, the Figures tab applies it as a gesture.
+- Labels, scale bar and border are vector child items of each panel
+  (ui/panel_overlays.py), rebuilt through FigureScene.overlay_builder when
+  the panel changes and re-laid out live while resizing.
 - Unselected panels have a faint dashed outline. Outlines, selection,
   handles, guides and the page border are *decorations*: drawn only while
   `FigureScene.decorations` is on (the editor), never in an export.
@@ -52,6 +55,7 @@ from PySide6.QtWidgets import (
 from ..figures import MIN_PANEL_MM, Geometry, snap_value
 from ..layout import best_snap
 from ..models import Figure, Panel
+from .panel_overlays import KIND_KEY
 
 PAGE_GAP_MM = 10.0
 HANDLE_PX = 9.0
@@ -81,6 +85,9 @@ class PanelItem(QGraphicsRectItem):
         self.panel_id = panel.id
         self.page = panel.page
         self._figure = figure
+        self.missing: list[str] = []                 # unresolved label tokens
+        self.scale_bar_error: Optional[str] = None
+        self.scale_bar_note: Optional[str] = None
         self.set_visual(visual)
         self._resizing = False
         self._press_size: tuple[float, float] = (0.0, 0.0)
@@ -107,6 +114,13 @@ class PanelItem(QGraphicsRectItem):
         self.setPos(panel.x_mm, panel.y_mm + page_offset_mm(self._figure, panel.page))
         self.setFlag(QGraphicsItem.ItemSendsGeometryChanges, True)
         self.set_visual(visual)
+        self.build_overlays(panel)
+
+    def build_overlays(self, panel: Panel) -> None:
+        scene = self.scene()
+        builder = getattr(scene, "overlay_builder", None)
+        if builder is not None:
+            builder(self, panel)
 
     @property
     def image_rect(self) -> Optional[QRectF]:
@@ -232,6 +246,9 @@ class PanelItem(QGraphicsRectItem):
         self.setRect(0, 0, w, h)
         # Constant scale, crop centre kept: the image moves by half the growth.
         self._image_shift = QPointF((w - w0) / 2.0, (h - h0) / 2.0)
+        panel = self._figure.panel(self.panel_id)
+        if panel is not None:                     # labels follow the moving edge
+            self.build_overlays(panel.model_copy(update={"width_mm": w, "height_mm": h}))
         event.accept()
 
     def mouseReleaseEvent(self, event) -> None:
@@ -255,6 +272,8 @@ class FigureScene(QGraphicsScene):
         self.on_commit: Optional[CommitCallback] = None
         self._committing = False
         self.decorations = True
+        # (PanelItem, Panel) -> builds labels / scale bar / border (set by the tab)
+        self.overlay_builder: Optional[Callable[[PanelItem, Panel], None]] = None
         self.page_items: list[QGraphicsRectItem] = []
         self.guides: tuple[Optional[QGraphicsLineItem], Optional[QGraphicsLineItem]] = (None, None)
 
@@ -280,6 +299,7 @@ class FigureScene(QGraphicsScene):
             ln.setPen(pen)
             ln.setZValue(1e6)
             ln.setVisible(False)
+            ln.setData(KIND_KEY, "decoration")
             self.addItem(ln)
             lines.append(ln)
         self.guides = (lines[0], lines[1])
@@ -363,6 +383,9 @@ class FigureCanvas(QGraphicsView):
     def set_commit_callback(self, cb: CommitCallback) -> None:
         self._scene.on_commit = cb
 
+    def set_overlay_builder(self, builder) -> None:
+        self._scene.overlay_builder = builder
+
     # ---- content ---------------------------------------------------------
     def set_figure(self, figure: Optional[Figure], provider: Optional[PixmapProvider] = None,
                    selected: Optional[set[str]] = None) -> None:
@@ -388,6 +411,7 @@ class FigureCanvas(QGraphicsView):
                 item = PanelItem(panel, figure, provider(panel) if provider else (None, "", None))
                 item.setZValue(z)
                 sc.addItem(item)
+                item.build_overlays(panel)
                 if selected and panel.id in selected:
                     item.setSelected(True)
             sc.add_guides()

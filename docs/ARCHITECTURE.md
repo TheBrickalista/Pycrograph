@@ -23,6 +23,8 @@ hash-chained operation log, and a PySide6 `QGraphicsView` UI.
 | `viewport.py` | Viewport = crop (pure geometry): uniform scale, zoom % (100 % = whole image fitted), pan, resize at constant scale, rotation about the crop centre, orientation mapping, where the image sits in its panel |
 | `layout.py` | Layout tools (pure): align, distribute, grid with gap, nudge, same size, align magnification (µm per page-mm), auto-layouts (split channels, montage, condition grid) with `lock_group` |
 | `preferences.py` | App preferences in `<workspace>/preferences.json`: journal presets (data), default preset, layout gap. Not project data, not logged |
+| `labels.py` | Label tokens resolved at render time ([channels], [time…], [z…], [zoom], [image], [dataset], [tags], [kv:Key]); unresolved → "?" + reported |
+| `scalebar.py` | Scale bar length on the page from the calibration and the viewport scale; reason when unavailable; non-isotropic pixels |
 | `render.py` | `PanelRenderer`: raw plane(s) or max projection → crop by array slicing → `render_composite` → orientation; LRU cache keyed by source hash + settings |
 | `readers/` | `ImageSource` interface (T, Z, C, Y, X; lazy `get_plane`). `tiff.py`: plain TIFF, MetaMorph TIFF (XML), MetaMorph STK (UIC tags). `metamorph.py`: metadata parsing |
 | `display.py` | window → gamma → invert → LUT → additive composite → RGB8; orientation; saturation; auto-window |
@@ -33,6 +35,8 @@ hash-chained operation log, and a PySide6 `QGraphicsView` UI.
 | `ui/main_window.py` | Tabs Home · Library · Figures · Preferences · About. Library tab = tree (left) · viewer (centre) · inspector (right); gesture commit |
 | `ui/home_tab.py` | Project list (new / open / archive / restore), figures of the open project |
 | `ui/figures_tab.py`, `ui/figure_canvas.py` | Figure selector, page canvas in mm at journal width, panel items (select, rubber band, move, resize handle), undo/redo, live-gesture commit, Preview · Info inspector |
+| `ui/labels_inspector.py` | Labels tab: labels, scale bar and border of all selected panels |
+| `ui/panel_overlays.py` | Labels, scale bar, border as vector child items of each panel (page mm), tagged by kind for the export |
 | `ui/page_setup.py` | Page setup dialog (preset, size, orientation, pages, background, grid, snap) |
 | `ui/panel_inspector.py` | Preview tab: edits all selected panels with mixed states; viewport mini-view, zoom, rotation/flips, T/Z + max projection, channel controls by index, copy/paste rendering and viewport, image defaults, replace image |
 | `ui/info_tabs.py` | Preferences (editable journal presets, default preset) and About |
@@ -103,6 +107,26 @@ stretched and the rest is page background.
 
 On screen, panels are decimated by an integer stride to at most 1024 px per
 side (no interpolation); export will render at native crop resolution.
+
+### Lock groups
+
+`Panel.lock_group` shares **black, white, gamma, LUT and invert per channel
+index** between the panels of a group — never visibility, T/Z, projection,
+crop, orientation or labels. `FigureEditor.edit()` propagates: locked fields
+changed on the first edited panel of a group (or the typed values, passed as
+`lock_values`) are applied to every other member, clamped to each image's
+bit depth; members lacking the channel are skipped. It happens inside the
+same gesture: one undo step, one log entry per panel changed. Locking a
+selection syncs the others to its first panel.
+
+### Labels, scale bar, border
+
+Overlays are rebuilt from the model whenever a panel changes (and live while
+resizing): child `QGraphicsTextItem` / `QGraphicsRectItem`s of the panel item
+in page mm, tagged with `data(KIND_KEY)` = `label`, `scalebar`,
+`scalebar-text` or `border`, so export can keep text as text. Each panel item
+holds Python references to its overlays (PySide does not keep a child of a
+Python-subclassed item alive on its own).
 
 ## Format migrations
 
