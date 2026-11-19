@@ -36,12 +36,14 @@ from __future__ import annotations
 
 import uuid
 from contextlib import contextmanager
+from dataclasses import dataclass
 from typing import Any, Callable, Iterable, Iterator, Optional
 
+from . import insets as I
 from . import viewport
 from .models import (
     ChannelSettings, Crop, Figure, ImageRef, PageSetup, Panel, PanelBorder, PanelLabel, Project,
-    ScaleBar, ZProjection,
+    ScaleBar, Shape, ZProjection,
 )
 from .storage import log_operation
 
@@ -352,7 +354,9 @@ class FigureEditor:
         its lock group, in the same gesture (see propagate_locks).
         `lock_values` gives the intended values, e.g. a typed White that fn
         clamped on a lower bit-depth image. `self.last_propagated` = ids of
-        panels changed by propagation only. Returns (applied, skipped)."""
+        panels changed by propagation only; `self.last_synced` = insets that
+        followed their parent (InsetStyle follow flags). Returns (applied,
+        skipped)."""
         key = key or label
         if self._live is not None and self._live[3] != key:
             self.flush()
@@ -361,7 +365,8 @@ class FigureEditor:
         panel_ids = list(panel_ids)
         pre = {pid: locked_state(p) for pid in panel_ids
                if (p := self.figure.panel(pid)) is not None and p.lock_group}
-        self.last_propagated: list[str] = []
+        self.last_propagated: list[str] = []      # changed through a lock group
+        self.last_synced: list[str] = []          # insets that followed their parent
         applied = skipped = 0
         try:
             for pid in panel_ids:
@@ -377,6 +382,14 @@ class FigureEditor:
             if propagate and pre:
                 self.last_propagated = propagate_locks(self.figure, self.project.images,
                                                        panel_ids, pre, lock_values)
+            # Insets following their parent take its T/Z / rendering now, in
+            # the same gesture (one log entry per inset changed).
+            for pid in panel_ids + self.last_propagated:
+                parent = self.figure.panel(pid)
+                if parent is not None:
+                    for iid in I.sync_insets(self.figure, parent, self.project.images):
+                        if iid not in panel_ids and iid not in self.last_synced:
+                            self.last_synced.append(iid)
         except BaseException:
             before = self._live[0]
             self._live = None
@@ -407,10 +420,12 @@ class FigureEditor:
         before = len(self.figure.panels)
         with self.gesture("figure.panel.delete", f"Delete {len(ids)} panel(s)"):
             self.figure.panels = [p for p in self.figure.panels if p.id not in ids]
-            # An inset whose parent is gone becomes an ordinary panel.
+            # An inset whose parent is gone becomes an ordinary panel. (A
+            # deleted inset's rectangle is derived: it simply disappears.)
             for p in self.figure.panels:
                 if p.inset_of in ids:
                     p.inset_of = None
+                    p.inset_style = None
         return before - len(self.figure.panels)
 
     def set_geometry(self, changes: dict[str, Geometry], operation: str = "figure.panel.move",
@@ -804,14 +819,112 @@ def copy_panels(panels: Iterable[Panel]) -> list[dict]:
 
 
 def pasted_panels(copied: list[dict], offset_mm: float = 5.0) -> list[Panel]:
-    """New panels from copied ones: new ids, shifted by offset_mm, labels
-    and every setting kept; not in any lock group, not an inset (they are
-    independent panels until locked again)."""
-    out = []
+    """New panels from copied ones: new ids, shifted by offset_mm, labels,
+    shapes and every setting kept; not in any lock group. A parent copied
+    with its insets keeps the link within the pasted set; an inset copied
+    without its parent becomes an ordinary panel."""
+    out, old_to_new = [], {}
     for d in copied:
         p = Panel.model_validate(d)
+        nid = new_id()
+        old_to_new[p.id] = nid
         out.append(p.model_copy(update={
-            "id": new_id(), "x_mm": round(p.x_mm + offset_mm, 6),
-            "y_mm": round(p.y_mm + offset_mm, 6), "lock_group": None,
-            "inset_of": None, "inset_style": None}))
+            "id": nid, "x_mm": round(p.x_mm + offset_mm, 6),
+            "y_mm": round(p.y_mm + offset_mm, 6), "lock_group": None}))
+    I.remap_links(out, old_to_new)
+    return out
+
+
+# ================================================================== Shapes
+# Shapes live in raw-image pixel coordinates (they follow crop, zoom and
+# orientation); stroke width and arrowhead are in page points.
+
+def add_shape(panel: Panel, ref: ImageRef, shape: Shape) -> bool:
+    panel.shapes.append(shape.model_copy(deep=True))
+    return True
+
+
+def update_shapes(panel: Panel, ref: ImageRef, ids: Iterable[str], fields: dict[str, Any]) -> bool:
+    ids = set(ids)
+    found = False
+    for i, sh in enumerate(panel.shapes):
+        if sh.id in ids:
+            panel.shapes[i] = Shape.model_validate({**sh.model_dump(), **fields})
+            found = True
+    return found
+
+
+def move_shapes(panel: Panel, ref: ImageRef, ids: Iterable[str], dx: float, dy: float) -> bool:
+    """Translate by (dx, dy) RAW pixels."""
+    ids = set(ids)
+    found = False
+    for sh in panel.shapes:
+        if sh.id in ids:
+            sh.points = [(round(x + dx, 4), round(y + dy, 4)) for x, y in sh.points]
+            found = True
+    return found
+
+
+def delete_shapes(panel: Panel, ref: ImageRef, ids: Iterable[str]) -> bool:
+    ids = set(ids)
+    n = len(panel.shapes)
+    panel.shapes = [sh for sh in panel.shapes if sh.id not in ids]
+    return len(panel.shapes) != n
+
+
+def paste_shapes(panel: Panel, ref: ImageRef, shapes: list[dict]) -> bool:
+    """Same raw coordinates, new ids (one copy per target panel)."""
+    for d in shapes:
+        panel.shapes.append(Shape.model_validate({**d, "id": new_id()}))
+    return bool(shapes)
+
+
+# ===================================================== consistency helpers
+@dataclass(frozen=True)
+class ChannelMismatch:
+    """Same channel index, different channel identity (name or wavelength)
+    between panels sharing rendering. Kept for the step-6 consistency check."""
+    index: int
+    variants: tuple[str, ...]
+    panel_ids: tuple[str, ...]
+
+    def message(self) -> str:
+        return f"channel {self.index + 1} differs: " + " vs ".join(self.variants)
+
+
+def channel_identity(ref: ImageRef, index: int) -> str:
+    info = next((c for c in ref.metadata.channels if c.index == index), None)
+    if info is None:
+        return "?"
+    name = info.name or f"Ch{index + 1}"
+    return f"{name} ({info.wavelength_nm:g} nm)" if info.wavelength_nm else name
+
+
+def channel_mismatches(panels: Iterable[Panel], images: dict[str, ImageRef]) -> list[ChannelMismatch]:
+    """For each channel index present in several panels' images: the
+    different (name, wavelength) identities, if more than one."""
+    by_index: dict[int, dict[str, list[str]]] = {}
+    for p in panels:
+        ref = images.get(p.image_id)
+        if ref is None:
+            continue
+        for idx in range(ref.metadata.shape.C):
+            by_index.setdefault(idx, {}).setdefault(channel_identity(ref, idx), []).append(p.id)
+    out = []
+    for idx, ident in sorted(by_index.items()):
+        if len(ident) > 1:
+            out.append(ChannelMismatch(idx, tuple(ident), tuple(i for ids in ident.values()
+                                                                for i in ids)))
+    return out
+
+
+def locked_settings_differ(panels: list[Panel]) -> list[Panel]:
+    """Panels whose locked settings (on the channels they share with the
+    first) differ from the first panel's: those a lock would change."""
+    first = locked_state(panels[0])
+    out = []
+    for p in panels[1:]:
+        st = locked_state(p)
+        if any(first[k] != v for k, v in st.items() if k in first):
+            out.append(p)
     return out

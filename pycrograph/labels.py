@@ -17,7 +17,9 @@ label follows T/Z changes, channel edits, annotations, replaced images...
 | [channels]       | visible channels: stain if set, else the channel name, each  |
 |                  | in its LUT colour, joined by " / "                           |
 | [time]           | t − Panel.time_offset_s, "12 s" below 1 min, "4.5 min" below |
-|                  | 1 h, else "1.25 h"                                           |
+|                  | 1 h, else "1.25 h". In a lock group (montage, split, grid,   |
+|                  | lock) the unit is chosen ONCE from the group's largest time, |
+|                  | so all its panels read in the same unit (group_time_unit)    |
 | [time:s]         | seconds                                                      |
 | [time:min]       | minutes                                                      |
 | [time:hh:mm]     | hours:minutes ("-0:05" before the offset)                    |
@@ -68,7 +70,14 @@ def _num(v: float, decimals: int = 1) -> str:
     return "0" if s in ("-0", "") else s
 
 
+def auto_time_unit(seconds: float) -> str:
+    a = abs(seconds)
+    return "s" if a < 60 else "min" if a < 3600 else "h"
+
+
 def format_time(seconds: float, unit: str = "auto") -> str:
+    if unit == "h":
+        return f"{_num(seconds / 3600.0, 2)} h"
     if unit == "s":
         return f"{_num(seconds)} s"
     if unit == "min":
@@ -110,15 +119,28 @@ def channel_runs(panel: Panel, ref: ImageRef) -> list[Run]:
     return runs
 
 
+def panel_time_s(panel: Panel, ref: ImageRef) -> Optional[float]:
+    offs = ref.metadata.time_offsets_s
+    if not offs or panel.t >= len(offs) or offs[panel.t] is None:
+        return None
+    return offs[panel.t] - panel.time_offset_s
+
+
+def group_time_unit(panels: list[Panel], images: dict[str, ImageRef]) -> Optional[str]:
+    """One [time] unit for a group of panels, from its largest |time|
+    (None when no panel has time stamps)."""
+    times = [t for p in panels if (r := images.get(p.image_id)) is not None
+             and (t := panel_time_s(p, r)) is not None]
+    return auto_time_unit(max(abs(t) for t in times)) if times else None
+
+
 def _token_value(token: str, panel: Panel, ref: ImageRef,
-                 project: Optional[Project]) -> Optional[str]:
+                 project: Optional[Project], time_unit: Optional[str] = None) -> Optional[str]:
     m = ref.metadata
     if token.startswith("time"):
-        unit = token.split(":", 1)[1] if ":" in token else "auto"
-        offs = m.time_offsets_s
-        if not offs or panel.t >= len(offs) or offs[panel.t] is None:
-            return None
-        return format_time(offs[panel.t] - panel.time_offset_s, unit)
+        unit = token.split(":", 1)[1] if ":" in token else (time_unit or "auto")
+        t = panel_time_s(panel, ref)
+        return None if t is None else format_time(t, unit)
     if token == "z":
         p = panel.z_projection
         return f"{p.z_start + 1}–{p.z_end + 1}" if p else str(panel.z + 1)
@@ -149,8 +171,10 @@ def _token_value(token: str, panel: Panel, ref: ImageRef,
 
 
 def resolve_label(text: str, panel: Panel, ref: Optional[ImageRef],
-                  project: Optional[Project] = None) -> tuple[list[Run], list[str]]:
-    """-> (runs to draw, tokens that could not be resolved)."""
+                  project: Optional[Project] = None,
+                  time_unit: Optional[str] = None) -> tuple[list[Run], list[str]]:
+    """-> (runs to draw, tokens that could not be resolved). `time_unit`
+    fixes the unit of [time] (a lock group's shared unit)."""
     runs: list[Run] = []
     missing: list[str] = []
     pos = 0
@@ -169,7 +193,7 @@ def resolve_label(text: str, panel: Panel, ref: Optional[ImageRef],
                 runs.append(Run(MISSING))
                 missing.append(m.group(0))
         else:
-            value = _token_value(token, panel, ref, project)
+            value = _token_value(token, panel, ref, project, time_unit)
             if value is None:
                 runs.append(Run(MISSING))
                 missing.append(m.group(0))

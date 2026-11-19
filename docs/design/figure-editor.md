@@ -270,6 +270,19 @@ Bump `PROJECT_FORMAT_VERSION` to 2 with a migration (`Figure.page` → `PageSetu
    grid adds `[kv:…]` / `[image]` row labels and `[channels]` column labels and reserves room
    for them.
 5. **Insets & shapes** (dynamic insets).
+   *Done.* Create inset = draw a rectangle on the selected panel (canvas draw mode); the
+   inset copies the parent's rendering, T/Z and orientation (not labels, shapes or lock
+   group), shows the region at 2× magnification and is placed right of the parent, moved
+   down past other panels, kept on the page, snapped. The rectangle on the parent is derived
+   from the inset's crop (`insets.rect_on_parent`); with the parent selected it can be
+   dragged or resized by its corner (aspect kept: the inset panel keeps its page size, its
+   crop and magnification change). Insets are numbered per parent in figure order; colours
+   cycle through yellow, cyan, magenta, green, orange, white. The follow flags sync the inset
+   inside the parent's gesture (one log entry per inset). Shapes: two raw-pixel points;
+   stroke and arrowhead in page points; clipped to the panel; selected by clicking once the
+   panel is selected. `[time]` in a lock group / montage uses one unit chosen from the
+   group's largest time; channel name / wavelength mismatches between panels sharing
+   rendering are reported (`figures.channel_mismatches`, reused by the step-6 check).
 6. **Export** (SVG/PDF/TIFF + sidecar JSON + info page) and **consistency check**, then
    archives.
 

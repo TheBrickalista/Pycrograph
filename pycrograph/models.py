@@ -239,9 +239,10 @@ class InsetStyle(BaseModel):
     rectangle on the parent is derived from the inset's crop at render time."""
     color: str = "#FFFFFF"
     width_pt: float = Field(0.75, gt=0)
-    show_on_parent: bool = True
-    follow_parent_tz: bool = True
-    follow_parent_rendering: bool = True
+    show_on_parent: bool = True               # rectangle (numbered) drawn on the parent
+    border_on_inset: bool = True              # matching border drawn on the inset itself
+    follow_parent_tz: bool = True             # T, Z, projection follow the parent
+    follow_parent_rendering: bool = True      # channel settings follow the parent
 
 
 class Shape(BaseModel):
@@ -249,9 +250,12 @@ class Shape(BaseModel):
     follows the crop and zoom. Annotation only — never touches pixels."""
     id: str
     kind: Literal["arrow", "line", "rect", "ellipse"]
+    # Two raw-pixel points: start -> end (line, arrow) or opposite corners
+    # (rect, ellipse).
     points: List[tuple[float, float]] = Field(default_factory=list)
     color: str = "#FFFFFF"
     width_pt: float = Field(1.0, gt=0)            # page points: equal on every panel
+    head_size_pt: float = Field(5.0, gt=0)        # arrowhead length, page points
 
 
 class Panel(BaseModel):

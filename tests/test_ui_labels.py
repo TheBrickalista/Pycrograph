@@ -194,7 +194,9 @@ def test_lock_ui_and_condition_grid_labels(app, setup):
     tab, view, insp = w.figures_tab, w.figures_tab.canvas, w.figures_tab.inspector
     view.select_ids([pa.id, pb.id])
     assert "Not locked" in insp.lock_label.text()
-    group = tab.lock_selection()
+    asked = []
+    group = tab.lock_selection(confirm=lambda text: asked.append(text) or True)
+    assert asked and "will take the levels/LUTs of panel 1" in asked[0]
     assert group and pa.lock_group == pb.lock_group == group
     assert group in insp.lock_label.text()
     # A channel edit through the Preview tab reaches the locked panel.

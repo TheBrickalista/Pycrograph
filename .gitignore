@@ -24,3 +24,6 @@ docs/_build/
 *.certSigningRequest
 *.pem
 *.key
+
+# Files saved by the Claude desktop app
+Claude outputs/

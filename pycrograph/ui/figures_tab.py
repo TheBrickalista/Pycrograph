@@ -33,13 +33,16 @@ from PySide6.QtWidgets import (
 )
 
 from .. import figures as F
+from .. import insets as I
 from .. import layout as L
 from .. import viewport as V
 from ..figures import FigureEditor, create_figure, next_figure_name, rename_figure
-from ..models import Figure, ImageRef, Panel, PanelLabel, Project
+from ..labels import group_time_unit
+from ..models import Figure, ImageRef, Panel, PanelLabel, Project, Shape
 from ..render import PanelRenderer, RenderError, crop_bounds
 from ..preferences import Preferences
 from .figure_canvas import FigureCanvas, PanelItem, PanelVisual
+from .insets_inspector import InsetsInspector
 from .labels_inspector import LabelsInspector
 from .page_setup import PageSetupDialog
 from .panel_inspector import PreviewInspector
@@ -67,6 +70,9 @@ class FiguresTab(QWidget):
         self._editors: dict[str, FigureEditor] = {}
         self.clip_rendering: Optional[list[dict]] = None
         self.clip_panels: Optional[list[dict]] = None
+        self.clip_shapes: Optional[list[dict]] = None
+        # Selected shapes per panel (shape selection lives here, not in the model)
+        self.selected_shapes: dict[str, set[str]] = {}
         self._last_missing: tuple = ()
         self.clip_viewport: Optional[dict] = None
         self._idle = QTimer(self)
@@ -137,6 +143,10 @@ class FiguresTab(QWidget):
         self.canvas = FigureCanvas()
         self.canvas.set_commit_callback(self._on_geometry_commit)
         self.canvas.set_overlay_builder(self._build_overlays)
+        sc = self.canvas.figure_scene
+        sc.on_inset_rect = self._on_inset_rect
+        sc.on_shape_click = self._on_shape_click
+        sc.on_shape_moved = self._on_shape_moved
         # Panel copy/paste: shortcuts on the canvas only, so Ctrl+C / Ctrl+V
         # keep working on text in the inspector fields.
         self.a_copy_panels = QAction("Copy Panels", self.canvas)
@@ -158,6 +168,8 @@ class FiguresTab(QWidget):
         self.labels_inspector = LabelsInspector(self)
         self.inspector_tabs.addTab(self.inspector, "Preview")
         self.inspector_tabs.addTab(self.labels_inspector, "Labels")
+        self.insets_inspector = InsetsInspector(self)
+        self.inspector_tabs.addTab(self.insets_inspector, "Insets && Shapes")
         self.inspector_tabs.addTab(self.info, "Info")
         self.inspector_tabs.setMinimumWidth(400)
         split.addWidget(self.inspector_tabs)
@@ -368,9 +380,15 @@ class FiguresTab(QWidget):
             notes.append(f"{skipped} panel(s) skipped" + (f" ({what})" if what else ""))
         if ed.last_propagated:
             notes.append(f"also applied to {len(ed.last_propagated)} locked panel(s)")
+            mism = self.mismatch_warning(ids + ed.last_propagated)
+            if mism and final:
+                notes.append(mism)
+        if ed.last_synced and final:
+            notes.append(f"{len(ed.last_synced)} inset(s) followed")
         if notes:
             self.status_message.emit(f"{label}: " + "; ".join(notes))
-        self.canvas.update_items(self._visual, ids + ed.last_propagated)
+        changed = ids + ed.last_propagated + ed.last_synced
+        self.canvas.update_items(self._visual, self._related_ids(changed, final))
         self.inspector.refresh_values(channels=final)
         if final:
             self.labels_inspector.refresh()
@@ -646,6 +664,9 @@ class FiguresTab(QWidget):
                                     label_space_mm=L.label_band_mm(fig.page.preset.font_size_pt))
             self.current_figure().panels.extend(p for row in rows for p in row if p is not None)
         self._layout(fn, "figure.layout.condition_grid", "Condition grid", select_new=True)
+        mism = self.mismatch_warning(self.canvas.selected_ids())
+        if mism and not own_rendering:
+            self.status_message.emit(f"Condition grid (shared rendering): {mism}")
 
     def condition_grid_dialog(self, own_rendering: bool = False) -> None:
         sel = self.selected_panels()
@@ -717,8 +738,246 @@ class FiguresTab(QWidget):
 
     def _build_overlays(self, item: PanelItem, panel: Panel) -> None:
         fig = self.current_figure()
-        if fig is not None:
-            build_overlays(item, panel, self.ref(panel), self.project, fig)
+        if fig is None:
+            return
+        unit = None
+        if panel.lock_group:              # one [time] unit per lock group / montage
+            members = F.lock_members(fig, panel.lock_group)
+            unit = group_time_unit(members, self.project.images)
+        build_overlays(item, panel, self.ref(panel), self.project, fig, time_unit=unit,
+                       selected_shapes=frozenset(self.selected_shapes.get(panel.id, ())))
+
+    def _related_ids(self, ids: list[str], wide: bool = True) -> list[str]:
+        """Panels whose drawing depends on `ids`: their parents (inset
+        rectangles) and insets; with `wide`, also their lock-group members
+        (shared [time] unit)."""
+        fig = self.current_figure()
+        if fig is None:
+            return ids
+        out = list(dict.fromkeys(ids))
+        for pid in list(out):
+            p = fig.panel(pid)
+            if p is None:
+                continue
+            if p.inset_of:
+                out.append(p.inset_of)
+            out += [q.id for q in I.insets_of(fig, pid)]
+            if wide and p.lock_group:
+                out += [q.id for q in F.lock_members(fig, p.lock_group)]
+        return list(dict.fromkeys(out))
+
+    def mismatch_warning(self, panel_ids: list[str]) -> str:
+        """Same channel index, different channel name / wavelength between
+        panels sharing rendering (kept for the step-6 consistency check)."""
+        fig = self.current_figure()
+        if fig is None or self.project is None:
+            return ""
+        panels = [p for p in fig.panels if p.id in set(panel_ids)]
+        mism = F.channel_mismatches(panels, self.project.images)
+        return ("⚠ " + "; ".join(m.message() for m in mism)) if mism else ""
+
+    # =============================================================== insets
+    def start_create_inset(self) -> bool:
+        """Draw mode on the single selected panel; the rectangle becomes the
+        inset's region."""
+        sel = self.selected_panels()
+        if len(sel) != 1:
+            return False
+        self.canvas.start_draw(sel[0].id, "rect", self._inset_drawn)
+        self.status_message.emit("Create inset: drag a rectangle on the panel (Esc cancels)")
+        return True
+
+    def _inset_drawn(self, panel_id: str, p0, p1) -> None:
+        fig = self.current_figure()
+        parent = fig.panel(panel_id) if fig else None
+        ref = self.ref(parent) if parent else None
+        if ref is None:
+            return
+        s = ref.metadata.shape
+        x0, y0 = min(p0[0], p1[0]), min(p0[1], p1[1])
+        rect = V.panel_rect_to_raw(parent, s.X, s.Y, (x0, y0, abs(p1[0] - p0[0]), abs(p1[1] - p0[1])))
+        self.create_inset(panel_id, rect)
+
+    def create_inset(self, parent_id: str, raw_rect) -> Optional[str]:
+        """New inset of `parent_id` showing `raw_rect` (raw px, clipped to
+        the image), at 2× the parent's magnification, right of the parent.
+        One gesture; the new inset is selected."""
+        ed = self.current_editor()
+        parent = ed.figure.panel(parent_id) if ed else None
+        ref = self.ref(parent) if parent else None
+        if ref is None:
+            return None
+        s = ref.metadata.shape
+        x, y, w, h = raw_rect
+        x0, y0 = max(0.0, x), max(0.0, y)
+        x1, y1 = min(float(s.X), x + w), min(float(s.Y), y + h)
+        if x1 - x0 < 1 or y1 - y0 < 1:
+            self.status_message.emit("Create inset: the rectangle is outside the image")
+            return None
+        self.flush()
+        self._before_gesture()
+        inset = I.create_inset(ed.figure, parent, ref, (x0, y0, x1 - x0, y1 - y0), F.new_id(),
+                               gap_mm=self.gap_spin.value())
+        with ed.gesture("figure.inset.create", "Create inset"):
+            ed.figure.panels.append(inset)
+        self.refresh(selected={inset.id})
+        return inset.id
+
+    def _on_inset_rect(self, inset_id: str, parent_id: str, rect, final: bool) -> None:
+        """The rectangle on the parent was dragged / resized: it becomes the
+        inset's crop. Live ticks update the inset only; the final commit is
+        deferred (the dragged item lives in the parent's overlays)."""
+        r = (rect.x(), rect.y(), rect.width(), rect.height())
+        fig = self.current_figure()
+        parent = fig.panel(parent_id) if fig else None
+        ref = self.ref(parent) if parent else None
+        if ref is None:
+            return
+
+        def fn(p: Panel, _r: ImageRef) -> bool:
+            I.set_from_parent_rect(p, fig.panel(parent_id), ref, r)
+            return True
+        if not final:
+            ed = self.current_editor()
+            if not ed.has_pending:
+                self._before_gesture()
+            ed.edit([inset_id], fn, "figure.inset.rect", "Edit inset region",
+                    key="inset.rect", final=False)
+            self.canvas.update_items(self._visual, [inset_id])
+            return
+        QTimer.singleShot(0, lambda: self.apply(fn, "Edit inset region", key="inset.rect",
+                                                operation="figure.inset.rect",
+                                                panel_ids=[inset_id]))
+
+    def set_inset_style(self, **fields) -> tuple[int, int]:
+        """Style / follow flags of every selected inset. Turning a follow
+        flag on syncs the inset to its parent at once (same gesture)."""
+        fig = self.current_figure()
+
+        def fn(p: Panel, r: ImageRef) -> bool:
+            if p.inset_of is None or p.inset_style is None:
+                return False
+            p.inset_style = p.inset_style.model_copy(update=fields)
+            parent = fig.panel(p.inset_of)
+            if parent is not None:
+                I.sync_inset(p, parent, r)
+            return True
+        return self.apply(fn, "Inset style", what="not an inset", operation="figure.inset.style")
+
+    def detach_insets(self) -> tuple[int, int]:
+        def fn(p: Panel, _r: ImageRef) -> bool:
+            if p.inset_of is None:
+                return False
+            p.inset_of, p.inset_style = None, None
+            return True
+        out = self.apply(fn, "Detach inset", what="not an inset", operation="figure.inset.detach")
+        self.refresh()
+        return out
+
+    # =============================================================== shapes
+    def start_draw_shape(self, kind: str) -> bool:
+        sel = self.selected_panels()
+        if len(sel) != 1:
+            return False
+        mode = "line" if kind in ("line", "arrow") else "rect"
+        self.canvas.start_draw(sel[0].id, mode,
+                               lambda pid, p0, p1: self._shape_drawn(pid, kind, p0, p1))
+        self.status_message.emit(f"Draw {kind}: drag on the panel (Esc cancels)")
+        return True
+
+    def _shape_drawn(self, panel_id: str, kind: str, p0, p1) -> None:
+        fig = self.current_figure()
+        panel = fig.panel(panel_id) if fig else None
+        ref = self.ref(panel) if panel else None
+        if ref is None:
+            return
+        s = ref.metadata.shape
+        pts = [V.panel_to_raw(panel, s.X, s.Y, *p0), V.panel_to_raw(panel, s.X, s.Y, *p1)]
+        self.add_shape(panel_id, kind, pts, **self.insets_inspector.shape_style())
+
+    def add_shape(self, panel_id: str, kind: str, raw_points, **style) -> Optional[str]:
+        shape = Shape(id=F.new_id(), kind=kind,
+                      points=[(round(x, 4), round(y, 4)) for x, y in raw_points], **style)
+        self.apply(lambda p, r: F.add_shape(p, r, shape), f"Add {kind}",
+                   operation="figure.shape.add", panel_ids=[panel_id])
+        self.selected_shapes = {panel_id: {shape.id}}
+        self.canvas.update_items(self._visual, [panel_id])
+        self.insets_inspector.refresh()
+        return shape.id
+
+    def _on_shape_click(self, panel_id: str, shape_id: str, additive: bool) -> None:
+        cur = self.selected_shapes.get(panel_id, set()) if additive else set()
+        self.selected_shapes = {**({k: v for k, v in self.selected_shapes.items()
+                                    if additive}), panel_id: cur | {shape_id}}
+        self.insets_inspector.refresh()
+
+    def select_shapes(self, panel_id: str, shape_ids) -> None:
+        self.selected_shapes = {panel_id: set(shape_ids)}
+        self.canvas.update_items(self._visual, [panel_id])
+        self.insets_inspector.refresh()
+
+    def _on_shape_moved(self, panel_id: str, shape_ids: list[str], dx_mm: float, dy_mm: float) -> None:
+        # Deferred: the dragged ShapeItem is rebuilt by the commit.
+        QTimer.singleShot(0, lambda: self.move_shapes(panel_id, shape_ids, dx_mm, dy_mm))
+
+    def move_shapes(self, panel_id: str, shape_ids, dx_mm: float, dy_mm: float) -> None:
+        """A page displacement (mm) -> raw pixels through the panel's own
+        crop, scale and orientation."""
+        fig = self.current_figure()
+        panel = fig.panel(panel_id) if fig else None
+        ref = self.ref(panel) if panel else None
+        if ref is None:
+            return
+        s = ref.metadata.shape
+        ax, ay = V.panel_to_raw(panel, s.X, s.Y, 0.0, 0.0)
+        bx, by = V.panel_to_raw(panel, s.X, s.Y, dx_mm, dy_mm)
+        self.apply(lambda p, r: F.move_shapes(p, r, shape_ids, bx - ax, by - ay), "Move shape(s)",
+                   operation="figure.shape.move", panel_ids=[panel_id])
+
+    def _shape_targets(self) -> dict[str, set[str]]:
+        sel = {p.id for p in self.selected_panels()}
+        return {k: v for k, v in self.selected_shapes.items() if k in sel and v}
+
+    def update_selected_shapes(self, **fields) -> tuple[int, int]:
+        targets = self._shape_targets()
+        if not targets:
+            return 0, 0
+        return self.apply(lambda p, r: F.update_shapes(p, r, targets.get(p.id, ()), fields),
+                          "Edit shape(s)", operation="figure.shape.set",
+                          panel_ids=list(targets))
+
+    def delete_selected_shapes(self) -> tuple[int, int]:
+        targets = self._shape_targets()
+        if not targets:
+            return 0, 0
+        out = self.apply(lambda p, r: F.delete_shapes(p, r, targets.get(p.id, ())),
+                         "Delete shape(s)", operation="figure.shape.delete",
+                         panel_ids=list(targets))
+        self.selected_shapes = {}
+        self.insets_inspector.refresh()
+        return out
+
+    def copy_shapes(self) -> int:
+        """The selected shapes of the first selected panel (all its shapes
+        when none is selected)."""
+        sel = self.selected_panels()
+        if not sel:
+            return 0
+        chosen = self.selected_shapes.get(sel[0].id) or {sh.id for sh in sel[0].shapes}
+        self.clip_shapes = [sh.model_dump(mode="json") for sh in sel[0].shapes if sh.id in chosen]
+        self.status_message.emit(f"{len(self.clip_shapes)} shape(s) copied")
+        self.insets_inspector.refresh()
+        return len(self.clip_shapes)
+
+    def paste_shapes(self) -> tuple[int, int]:
+        """Into every selected panel, same raw coordinates; one gesture."""
+        if not self.clip_shapes:
+            return 0, 0
+        clip = list(self.clip_shapes)
+        out = self.apply(lambda p, r: F.paste_shapes(p, r, clip), "Paste shape(s)",
+                         operation="figure.shape.paste")
+        self.insets_inspector.refresh()
+        return out
 
     # ======================================================== panel clipboard
     def copy_panels(self) -> int:
@@ -743,17 +1002,34 @@ class FiguresTab(QWidget):
         return [p.id for p in new]
 
     # ================================================================ locks
-    def lock_selection(self) -> Optional[str]:
+    def lock_selection(self, confirm: Optional[Callable[[str], bool]] = None) -> Optional[str]:
         """One lock group for the selection; the others take the first
-        panel's locked channel settings."""
+        panel's locked channel settings — confirmed first when they differ
+        (`confirm`: default a dialog)."""
         sel = self.selected_panels()
         if len(sel) < 2:
             return None
+        differ = F.locked_settings_differ(sel)
+        if differ:
+            ref0 = self.ref(sel[0])
+            text = (f"{len(differ)} panel(s) will take the levels/LUTs of panel "
+                    f"{self.current_figure().panels.index(sel[0]) + 1} "
+                    f"({ref0.filename if ref0 else '?'}). Lock?")
+            mism = self.mismatch_warning([p.id for p in sel])
+            if mism:
+                text += "\n\n" + mism
+            ok = confirm(text) if confirm else QMessageBox.question(
+                self, "Lock selection", text) == QMessageBox.Yes
+            if not ok:
+                return None
         group = f"lock:{F.new_id()}"
         images = self.project.images
         self._layout(lambda ps, _r: F.lock_panels(ps, images, group), "figure.lock.set",
                      "Lock", min_sel=2)
         self.inspector.set_panels(self.selected_panels())
+        mism = self.mismatch_warning([p.id for p in sel])
+        if mism:
+            self.status_message.emit(f"Locked: {mism}")
         return group
 
     def unlock_selection(self) -> None:
@@ -886,14 +1162,17 @@ class FiguresTab(QWidget):
             self.page_label.setText("")
         self.inspector.set_panels(self.selected_panels())
         self.labels_inspector.set_panels(self.selected_panels())
+        self.insets_inspector.set_panels(self.selected_panels())
         self._report_missing()
         self._update_info()
         self._update_enabled()
 
-    def _on_selection_changed(self, _ids: list) -> None:
+    def _on_selection_changed(self, ids: list) -> None:
         self.flush()                      # a gesture never spans two selections
+        self.selected_shapes = {k: v for k, v in self.selected_shapes.items() if k in set(ids)}
         self.inspector.set_panels(self.selected_panels())
         self.labels_inspector.set_panels(self.selected_panels())
+        self.insets_inspector.set_panels(self.selected_panels())
         self._update_info()
         self._update_enabled()
 
