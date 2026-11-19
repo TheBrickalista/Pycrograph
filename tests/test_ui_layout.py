@@ -219,7 +219,7 @@ def test_auto_layouts(app, setup, monkeypatch):
 
     view.select_ids([pa.id, pb.id])
     n = len(w.project.operation_log)
-    tab.layout_actions["condition_grid"].trigger()
+    tab.condition_grid()
     added = w.project.operation_log[n:]
     assert len(added) == 3 + 1                                # 2ch + merge, 1ch
     groups = {f.panel(e.target_id).lock_group for e in added}

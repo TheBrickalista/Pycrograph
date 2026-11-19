@@ -75,6 +75,24 @@ def orient_point(u: float, v: float, fw: float, fh: float, rotation_deg: int,
     return u, v
 
 
+def unorient_point(u: float, v: float, fw: float, fh: float, rotation_deg: int,
+                   flip_h: bool, flip_v: bool) -> tuple[float, float]:
+    """Inverse of orient_point: a point of the oriented frame -> the raw frame
+    fw x fh (raw size)."""
+    r = rotation_deg % 360
+    if r == 90:
+        u, v = v, fh - u
+    elif r == 180:
+        u, v = fw - u, fh - v
+    elif r == 270:
+        u, v = fw - v, u
+    if flip_h:
+        u = fw - u
+    if flip_v:
+        v = fh - v
+    return u, v
+
+
 def orient_vector(du: float, dv: float, rotation_deg: int, flip_h: bool,
                   flip_v: bool) -> tuple[float, float]:
     if flip_h:
@@ -146,6 +164,49 @@ def image_rect_mm(panel: Panel, width: int, height: int,
     u, v, w, h = orient_rect((x0, y0, x1 - x0, y1 - y0), (c.x, c.y, c.w, c.h),
                              panel.rotation_deg, panel.flip_horizontal, panel.flip_vertical)
     return ox + u * s, oy + v * s, w * s, h * s
+
+
+def _placement(panel: Panel, width: int, height: int) -> tuple[Crop, float, float, float]:
+    """(crop, mm per raw px, x offset, y offset) of the image in the panel."""
+    c = effective_crop(panel, width, height)
+    s = mm_per_px(panel, width, height)
+    ow, oh = oriented_wh(c.w, c.h, panel.rotation_deg)
+    return c, s, (panel.width_mm - ow * s) / 2.0, (panel.height_mm - oh * s) / 2.0
+
+
+def raw_to_panel(panel: Panel, width: int, height: int, x: float, y: float) -> tuple[float, float]:
+    """A raw-pixel point -> panel-local mm (through crop, orientation and the
+    uniform scale). Shapes and inset rectangles are drawn with it."""
+    c, s, ox, oy = _placement(panel, width, height)
+    u, v = orient_point(x - c.x, y - c.y, c.w, c.h, panel.rotation_deg,
+                        panel.flip_horizontal, panel.flip_vertical)
+    return ox + u * s, oy + v * s
+
+
+def panel_to_raw(panel: Panel, width: int, height: int, u_mm: float, v_mm: float) -> tuple[float, float]:
+    """Inverse of raw_to_panel."""
+    c, s, ox, oy = _placement(panel, width, height)
+    u, v = unorient_point((u_mm - ox) / s, (v_mm - oy) / s, c.w, c.h, panel.rotation_deg,
+                          panel.flip_horizontal, panel.flip_vertical)
+    return c.x + u, c.y + v
+
+
+def _rect_from(p, q) -> Rect:
+    return min(p[0], q[0]), min(p[1], q[1]), abs(q[0] - p[0]), abs(q[1] - p[1])
+
+
+def raw_rect_to_panel(panel: Panel, width: int, height: int, rect: Rect) -> Rect:
+    """A raw rectangle -> panel-local mm rectangle (90° rotations keep
+    rectangles axis-aligned)."""
+    x, y, w, h = rect
+    return _rect_from(raw_to_panel(panel, width, height, x, y),
+                      raw_to_panel(panel, width, height, x + w, y + h))
+
+
+def panel_rect_to_raw(panel: Panel, width: int, height: int, rect: Rect) -> Rect:
+    x, y, w, h = rect
+    return _rect_from(panel_to_raw(panel, width, height, x, y),
+                      panel_to_raw(panel, width, height, x + w, y + h))
 
 
 # ------------------------------------------------------------- operations

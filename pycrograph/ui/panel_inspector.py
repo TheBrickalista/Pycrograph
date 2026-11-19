@@ -177,6 +177,7 @@ class PreviewInspector(QScrollArea):
         title.setStyleSheet("font-size: 13px; font-weight: 600;")
         title.setWordWrap(True)
         self._lay.addWidget(title)
+        self._build_lock()
         self._build_viewport()
         self._build_tz()
         self._build_channels()
@@ -184,6 +185,42 @@ class PreviewInspector(QScrollArea):
         self._lay.addStretch(1)
         self.refresh_values()
         self.refresh_planes()
+
+    def _build_lock(self) -> None:
+        """Lock indicator + toggle. A lock shares LUT, black, white, gamma and
+        invert per channel index between the panels of a group."""
+        frame, lay = _section("Lock (shared levels / LUT)")
+        groups = [p.lock_group for p in self.panels]
+        fig = self.tab.current_figure()
+        named = sorted({g for g in groups if g})
+        if not named:
+            text = "🔓 Not locked"
+        elif len(named) == 1 and all(groups):
+            n = sum(1 for q in fig.panels if q.lock_group == named[0]) if fig else 0
+            text = f"🔒 Locked: {named[0]} ({n} panel(s) in the group)"
+        else:
+            text = "🔒 Mixed: " + ", ".join(named) + (" + unlocked panels" if not all(groups) else "")
+        self.lock_label = QLabel(text)
+        self.lock_label.setWordWrap(True)
+        self.lock_label.setToolTip("Editing a channel's LUT, levels, gamma or invert on a locked "
+                                   "panel applies it to the same channel of every panel of the "
+                                   "group. Visibility, T/Z, crop, orientation and labels stay "
+                                   "per panel.")
+        lay.addWidget(self.lock_label)
+        row = QHBoxLayout()
+        self.lock_buttons = {}
+        for key, text, slot, enabled in (
+                ("lock", "Lock selection", self.tab.lock_selection, len(self.panels) >= 2),
+                ("unlock", "Unlock", self.tab.unlock_selection, bool(named)),
+                ("select", "Select group", self.tab.select_lock_group, bool(named))):
+            b = QPushButton(text)
+            b.setEnabled(enabled)
+            b.clicked.connect(lambda _c=False, s_=slot: s_())
+            self.lock_buttons[key] = b
+            row.addWidget(b)
+        row.addStretch(1)
+        lay.addLayout(row)
+        self._lay.addWidget(frame)
 
     def _build_viewport(self) -> None:
         frame, lay = _section("Viewport (crop)")
@@ -510,9 +547,12 @@ class PreviewInspector(QScrollArea):
         self.refresh_planes()
 
     def _on_channel_changed(self, index: int, field: str, value, final: bool) -> None:
-        self._apply(lambda p, r: F.set_channel_field(p, r, index, field, value),
-                    f"Channel {index + 1} {field}", key=f"channels[{index}].{field}",
-                    final=final, what=f"no channel {index + 1}")
+        # The typed value goes to locked panels too, each clamping it to its
+        # own bit depth (not the first panel's clamped copy).
+        self.tab.apply(lambda p, r: F.set_channel_field(p, r, index, field, value),
+                       f"Channel {index + 1} {field}", key=f"channels[{index}].{field}",
+                       final=final, what=f"no channel {index + 1}",
+                       lock_values={(index, field): value} if field in F.LOCKED_FIELDS else None)
 
     def _on_auto(self, index: int) -> None:
         def auto(p: Panel, r: ImageRef) -> bool:

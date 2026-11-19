@@ -26,6 +26,12 @@ Interaction
   edge, then centre, then right/bottom, then the lower target). The selection moves as one block (same offset).
 - Arrow keys nudge the selection by 0.1 mm (Shift: 1 mm): the canvas
   emits `nudge_requested`, the Figures tab applies it as a gesture.
+- Labels, scale bar and border are vector child items of each panel
+  (ui/panel_overlays.py), rebuilt through FigureScene.overlay_builder when
+  the panel changes and re-laid out live while resizing.
+- Draw mode (start_draw): the next left-drag over one panel draws a
+  rectangle or a line (create an inset, add a shape); Esc cancels. The
+  result is reported in panel-local mm, clamped to the panel.
 - Unselected panels have a faint dashed outline. Outlines, selection,
   handles, guides and the page border are *decorations*: drawn only while
   `FigureScene.decorations` is on (the editor), never in an export.
@@ -42,7 +48,7 @@ from __future__ import annotations
 
 from typing import Callable, Optional
 
-from PySide6.QtCore import QPointF, QRectF, Qt, Signal
+from PySide6.QtCore import QLineF, QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import QBrush, QColor, QFont, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
     QGraphicsItem, QGraphicsLineItem, QGraphicsRectItem, QGraphicsScene, QGraphicsView, QStyle,
@@ -52,6 +58,7 @@ from PySide6.QtWidgets import (
 from ..figures import MIN_PANEL_MM, Geometry, snap_value
 from ..layout import best_snap
 from ..models import Figure, Panel
+from .panel_overlays import KIND_KEY
 
 PAGE_GAP_MM = 10.0
 HANDLE_PX = 9.0
@@ -81,6 +88,9 @@ class PanelItem(QGraphicsRectItem):
         self.panel_id = panel.id
         self.page = panel.page
         self._figure = figure
+        self.missing: list[str] = []                 # unresolved label tokens
+        self.scale_bar_error: Optional[str] = None
+        self.scale_bar_note: Optional[str] = None
         self.set_visual(visual)
         self._resizing = False
         self._press_size: tuple[float, float] = (0.0, 0.0)
@@ -107,6 +117,13 @@ class PanelItem(QGraphicsRectItem):
         self.setPos(panel.x_mm, panel.y_mm + page_offset_mm(self._figure, panel.page))
         self.setFlag(QGraphicsItem.ItemSendsGeometryChanges, True)
         self.set_visual(visual)
+        self.build_overlays(panel)
+
+    def build_overlays(self, panel: Panel) -> None:
+        scene = self.scene()
+        builder = getattr(scene, "overlay_builder", None)
+        if builder is not None:
+            builder(self, panel)
 
     @property
     def image_rect(self) -> Optional[QRectF]:
@@ -232,6 +249,9 @@ class PanelItem(QGraphicsRectItem):
         self.setRect(0, 0, w, h)
         # Constant scale, crop centre kept: the image moves by half the growth.
         self._image_shift = QPointF((w - w0) / 2.0, (h - h0) / 2.0)
+        panel = self._figure.panel(self.panel_id)
+        if panel is not None:                     # labels follow the moving edge
+            self.build_overlays(panel.model_copy(update={"width_mm": w, "height_mm": h}))
         event.accept()
 
     def mouseReleaseEvent(self, event) -> None:
@@ -255,6 +275,15 @@ class FigureScene(QGraphicsScene):
         self.on_commit: Optional[CommitCallback] = None
         self._committing = False
         self.decorations = True
+        # (PanelItem, Panel) -> builds labels / scale bar / border (set by the tab)
+        self.overlay_builder: Optional[Callable[[PanelItem, Panel], None]] = None
+        # Overlay interaction (ui/panel_overlays.py), set by the tab:
+        # on_inset_rect(inset_id, parent_id, QRectF parent-local mm, final)
+        # on_shape_click(panel_id, shape_id, additive)
+        # on_shape_moved(panel_id, shape_ids, dx_mm, dy_mm)
+        self.on_inset_rect = None
+        self.on_shape_click = None
+        self.on_shape_moved = None
         self.page_items: list[QGraphicsRectItem] = []
         self.guides: tuple[Optional[QGraphicsLineItem], Optional[QGraphicsLineItem]] = (None, None)
 
@@ -280,6 +309,7 @@ class FigureScene(QGraphicsScene):
             ln.setPen(pen)
             ln.setZValue(1e6)
             ln.setVisible(False)
+            ln.setData(KIND_KEY, "decoration")
             self.addItem(ln)
             lines.append(ln)
         self.guides = (lines[0], lines[1])
@@ -355,6 +385,10 @@ class FigureCanvas(QGraphicsView):
         self._panning = False
         self._pan_last = QPointF()
         self._fit_mode = True
+        # Draw mode: (panel id, "rect" | "line", callback(panel_id, p0, p1))
+        self._draw: Optional[tuple[str, str, Callable]] = None
+        self._draw_start: Optional[QPointF] = None
+        self._draw_item: Optional[QGraphicsItem] = None
 
     @property
     def figure_scene(self) -> FigureScene:
@@ -362,6 +396,9 @@ class FigureCanvas(QGraphicsView):
 
     def set_commit_callback(self, cb: CommitCallback) -> None:
         self._scene.on_commit = cb
+
+    def set_overlay_builder(self, builder) -> None:
+        self._scene.overlay_builder = builder
 
     # ---- content ---------------------------------------------------------
     def set_figure(self, figure: Optional[Figure], provider: Optional[PixmapProvider] = None,
@@ -388,6 +425,7 @@ class FigureCanvas(QGraphicsView):
                 item = PanelItem(panel, figure, provider(panel) if provider else (None, "", None))
                 item.setZValue(z)
                 sc.addItem(item)
+                item.build_overlays(panel)
                 if selected and panel.id in selected:
                     item.setSelected(True)
             sc.add_guides()
@@ -459,7 +497,70 @@ class FigureCanvas(QGraphicsView):
             return
         super().wheelEvent(event)
 
+    # ---- draw mode ---------------------------------------------------------
+    @property
+    def drawing(self) -> bool:
+        return self._draw is not None
+
+    def start_draw(self, panel_id: str, mode: str, callback: Callable) -> None:
+        """Next left-drag over `panel_id` draws a rect / line; callback gets
+        (panel_id, p0, p1) in panel-local mm, clamped to the panel."""
+        self.cancel_draw()
+        self._draw = (panel_id, mode, callback)
+        self.viewport().setCursor(Qt.CrossCursor)
+        self.setFocus()
+
+    def cancel_draw(self) -> None:
+        if self._draw_item is not None and self._draw_item.scene() is not None:
+            self._draw_item.scene().removeItem(self._draw_item)
+        self._draw = self._draw_start = self._draw_item = None
+        self.viewport().unsetCursor()
+
+    def _draw_local(self, event) -> Optional[QPointF]:
+        item = self.item_for(self._draw[0])
+        if item is None:
+            return None
+        p = item.mapFromScene(self.mapToScene(event.position().toPoint()))
+        r = item.rect()
+        return QPointF(min(max(p.x(), r.left()), r.right()), min(max(p.y(), r.top()), r.bottom()))
+
+    def _draw_press(self, event) -> None:
+        item = self.item_for(self._draw[0])
+        if item is None:
+            self.cancel_draw()
+            return
+        local = item.mapFromScene(self.mapToScene(event.position().toPoint()))
+        if not item.rect().contains(local):
+            return                                  # must start on the panel
+        self._draw_start = local
+        pen = QPen(GUIDE_COLOR, 1, Qt.DashLine)
+        pen.setCosmetic(True)
+        tmp = QGraphicsLineItem(item) if self._draw[1] == "line" else QGraphicsRectItem(item)
+        tmp.setPen(pen)
+        tmp.setData(KIND_KEY, "decoration")
+        self._draw_item = tmp
+
+    def _draw_move(self, event) -> None:
+        p = self._draw_local(event)
+        if p is None or self._draw_start is None:
+            return
+        if isinstance(self._draw_item, QGraphicsLineItem):
+            self._draw_item.setLine(QLineF(self._draw_start, p))
+        else:
+            self._draw_item.setRect(QRectF(self._draw_start, p).normalized())
+
+    def _draw_release(self, event) -> None:
+        p = self._draw_local(event)
+        start, pid, cb = self._draw_start, self._draw[0], self._draw[2]
+        self.cancel_draw()
+        if p is not None and start is not None and (p - start).manhattanLength() > 0.2:
+            cb(pid, (start.x(), start.y()), (p.x(), p.y()))
+
     def keyPressEvent(self, event) -> None:
+        if event.key() == Qt.Key_Escape and self.drawing:
+            self.cancel_draw()
+            event.accept()
+            return
         step = NUDGE_SHIFT_MM if event.modifiers() & Qt.ShiftModifier else NUDGE_MM
         d = {Qt.Key_Left: (-step, 0.0), Qt.Key_Right: (step, 0.0),
              Qt.Key_Up: (0.0, -step), Qt.Key_Down: (0.0, step)}.get(event.key())
@@ -470,6 +571,10 @@ class FigureCanvas(QGraphicsView):
         super().keyPressEvent(event)
 
     def mousePressEvent(self, event) -> None:
+        if self.drawing and event.button() == Qt.LeftButton:
+            self._draw_press(event)
+            event.accept()
+            return
         if event.button() == Qt.MiddleButton:
             self._panning = True
             self._pan_last = event.position()
@@ -479,6 +584,11 @@ class FigureCanvas(QGraphicsView):
         super().mousePressEvent(event)
 
     def mouseMoveEvent(self, event) -> None:
+        if self.drawing:
+            if self._draw_start is not None:
+                self._draw_move(event)
+            event.accept()
+            return
         if self._panning:
             d = event.position() - self._pan_last
             self._pan_last = event.position()
@@ -490,6 +600,11 @@ class FigureCanvas(QGraphicsView):
         super().mouseMoveEvent(event)
 
     def mouseReleaseEvent(self, event) -> None:
+        if self.drawing and event.button() == Qt.LeftButton:
+            if self._draw_start is not None:
+                self._draw_release(event)
+            event.accept()
+            return
         if self._panning and event.button() == Qt.MiddleButton:
             self._panning = False
             self.setCursor(Qt.ArrowCursor)

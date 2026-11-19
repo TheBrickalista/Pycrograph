@@ -17,6 +17,8 @@ permissions:
 jobs:
   analyze:
     name: Analyze Python
+    # Code scanning needs GitHub Advanced Security on private repositories.
+    if: ${{ !github.event.repository.private }}
     runs-on: ubuntu-24.04
     permissions:
       security-events: write

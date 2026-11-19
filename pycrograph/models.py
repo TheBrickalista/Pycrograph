@@ -191,24 +191,31 @@ class Crop(BaseModel):
     h: float = Field(gt=0)
 
 
+LabelPosition = Literal[
+    "top", "bottom", "left", "right", "left-vertical", "right-vertical",
+    "top-left", "top-right", "bottom-left", "bottom-right",
+]
+
+
 class PanelLabel(BaseModel):
+    """Text drawn with a panel. `text` may hold tokens ([channels], [time],
+    [kv:Key], ...) resolved at render time (labels.py)."""
     text: str = ""
-    # "channel:<i>", "time", "z", "tag:<name>", "kv:<key>" or "" (free text)
+    # Unused (kept for files written by 0.1): tokens in `text` replace it.
     source: str = ""
-    position: Literal[
-        "top", "bottom", "left", "right", "left-vertical", "right-vertical",
-        "top-left", "top-right", "bottom-left", "bottom-right",
-    ] = "top"
-    font_size_pt: Optional[float] = None
-    color: Optional[str] = None          # None = channel colour / black
+    position: LabelPosition = "top"
+    font_family: Optional[str] = None    # None = page preset font
+    font_size_pt: Optional[float] = Field(None, gt=0)   # None = page preset size
+    # None = automatic: black outside the panel, white inside.
+    color: Optional[str] = None
 
 
 class ScaleBar(BaseModel):
     visible: bool = False
-    length: float = 10.0                 # in calibration units
-    unit: str = "um"
+    length: float = Field(10.0, gt=0)    # in `unit`
+    unit: str = "um"                     # "um", "nm" or "mm" (converted from the calibration)
     position: Literal["bottom-left", "bottom-right", "top-left", "top-right"] = "bottom-right"
-    thickness_pt: float = 2.0
+    thickness_pt: float = Field(2.0, gt=0)
     show_label: bool = True
     color: str = "#FFFFFF"
     font_size_pt: Optional[float] = None         # None = page preset font size
@@ -232,9 +239,10 @@ class InsetStyle(BaseModel):
     rectangle on the parent is derived from the inset's crop at render time."""
     color: str = "#FFFFFF"
     width_pt: float = Field(0.75, gt=0)
-    show_on_parent: bool = True
-    follow_parent_tz: bool = True
-    follow_parent_rendering: bool = True
+    show_on_parent: bool = True               # rectangle (numbered) drawn on the parent
+    border_on_inset: bool = True              # matching border drawn on the inset itself
+    follow_parent_tz: bool = True             # T, Z, projection follow the parent
+    follow_parent_rendering: bool = True      # channel settings follow the parent
 
 
 class Shape(BaseModel):
@@ -242,9 +250,12 @@ class Shape(BaseModel):
     follows the crop and zoom. Annotation only — never touches pixels."""
     id: str
     kind: Literal["arrow", "line", "rect", "ellipse"]
+    # Two raw-pixel points: start -> end (line, arrow) or opposite corners
+    # (rect, ellipse).
     points: List[tuple[float, float]] = Field(default_factory=list)
     color: str = "#FFFFFF"
     width_pt: float = Field(1.0, gt=0)            # page points: equal on every panel
+    head_size_pt: float = Field(5.0, gt=0)        # arrowhead length, page points
 
 
 class Panel(BaseModel):

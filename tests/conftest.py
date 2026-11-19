@@ -52,3 +52,21 @@ def workspace(tmp_path: Path):
     ws = Workspace(tmp_path / "ws")
     ws.ensure()
     return ws
+
+
+@pytest.fixture(autouse=True)
+def _no_modal_dialogs(monkeypatch):
+    """A modal dialog in an offscreen test blocks forever: make any
+    unexpected one fail at once instead. Tests that expect a dialog patch it
+    themselves (their monkeypatch wins) or pass a confirm callback."""
+    try:
+        from PySide6.QtWidgets import QInputDialog, QMessageBox
+    except ImportError:                                   # pragma: no cover
+        return
+
+    def fail(*args, **kwargs):
+        raise AssertionError(f"unexpected modal dialog: {args[1:3]}")
+    for name in ("question", "warning", "information", "critical"):
+        monkeypatch.setattr(QMessageBox, name, staticmethod(fail))
+    for name in ("getItem", "getText", "getInt", "getDouble"):
+        monkeypatch.setattr(QInputDialog, name, staticmethod(fail))

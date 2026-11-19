@@ -36,10 +36,15 @@ from __future__ import annotations
 
 import uuid
 from contextlib import contextmanager
+from dataclasses import dataclass
 from typing import Any, Callable, Iterable, Iterator, Optional
 
+from . import insets as I
 from . import viewport
-from .models import ChannelSettings, Crop, Figure, ImageRef, PageSetup, Panel, Project, ZProjection
+from .models import (
+    ChannelSettings, Crop, Figure, ImageRef, PageSetup, Panel, PanelBorder, PanelLabel, Project,
+    ScaleBar, Shape, ZProjection,
+)
 from .storage import log_operation
 
 DEFAULT_PANEL_WIDTH_MM = 40.0
@@ -337,17 +342,31 @@ class FigureEditor:
 
     def edit(self, panel_ids: Iterable[str], fn: Callable[[Panel, ImageRef], bool],
              operation: str = "figure.panel.set", label: str = "Edit panel(s)",
-             key: Optional[str] = None, final: bool = True) -> tuple[int, int]:
+             key: Optional[str] = None, final: bool = True, propagate: bool = True,
+             lock_values: Optional[dict[tuple[int, str], Any]] = None) -> tuple[int, int]:
         """Apply fn(panel, ref) to each panel; fn returns False to skip a
         panel (e.g. its image lacks that channel). With final=False the
         gesture stays open across calls with the same `key` (slider ticks)
         and is committed by flush() or by the next final call.
-        Returns (applied, skipped)."""
+
+        Lock groups (propagate=True): locked channel settings changed by fn
+        on a panel are applied to the same channel of every other panel of
+        its lock group, in the same gesture (see propagate_locks).
+        `lock_values` gives the intended values, e.g. a typed White that fn
+        clamped on a lower bit-depth image. `self.last_propagated` = ids of
+        panels changed by propagation only; `self.last_synced` = insets that
+        followed their parent (InsetStyle follow flags). Returns (applied,
+        skipped)."""
         key = key or label
         if self._live is not None and self._live[3] != key:
             self.flush()
         if self._live is None:
             self._live = (snapshot(self.figure), operation, label, key)
+        panel_ids = list(panel_ids)
+        pre = {pid: locked_state(p) for pid in panel_ids
+               if (p := self.figure.panel(pid)) is not None and p.lock_group}
+        self.last_propagated: list[str] = []      # changed through a lock group
+        self.last_synced: list[str] = []          # insets that followed their parent
         applied = skipped = 0
         try:
             for pid in panel_ids:
@@ -360,6 +379,17 @@ class FigureEditor:
                     skipped += 1
                 else:
                     applied += 1
+            if propagate and pre:
+                self.last_propagated = propagate_locks(self.figure, self.project.images,
+                                                       panel_ids, pre, lock_values)
+            # Insets following their parent take its T/Z / rendering now, in
+            # the same gesture (one log entry per inset changed).
+            for pid in panel_ids + self.last_propagated:
+                parent = self.figure.panel(pid)
+                if parent is not None:
+                    for iid in I.sync_insets(self.figure, parent, self.project.images):
+                        if iid not in panel_ids and iid not in self.last_synced:
+                            self.last_synced.append(iid)
         except BaseException:
             before = self._live[0]
             self._live = None
@@ -390,10 +420,12 @@ class FigureEditor:
         before = len(self.figure.panels)
         with self.gesture("figure.panel.delete", f"Delete {len(ids)} panel(s)"):
             self.figure.panels = [p for p in self.figure.panels if p.id not in ids]
-            # An inset whose parent is gone becomes an ordinary panel.
+            # An inset whose parent is gone becomes an ordinary panel. (A
+            # deleted inset's rectangle is derived: it simply disappears.)
             for p in self.figure.panels:
                 if p.inset_of in ids:
                     p.inset_of = None
+                    p.inset_style = None
         return before - len(self.figure.panels)
 
     def set_geometry(self, changes: dict[str, Geometry], operation: str = "figure.panel.move",
@@ -470,6 +502,82 @@ class FigureEditor:
 # does the logging).
 
 CHANNEL_FIELDS = ("visible", "lut", "black", "white", "gamma", "invert")
+# What a lock group shares, per channel index (design §7.3). Never
+# visibility, T/Z, projection, crop, orientation or labels.
+LOCKED_FIELDS = ("lut", "black", "white", "gamma", "invert")
+
+
+def locked_state(panel: Panel) -> dict[tuple[int, str], Any]:
+    return {(c.index, f): getattr(c, f) for c in panel.channels for f in LOCKED_FIELDS}
+
+
+def lock_members(figure: Figure, group: Optional[str]) -> list[Panel]:
+    return [p for p in figure.panels if group and p.lock_group == group]
+
+
+def apply_locked(panel: Panel, ref: ImageRef, values: dict[tuple[int, str], Any]) -> bool:
+    """Set locked fields on one panel; channels it lacks are skipped; levels
+    clamped to its own bit depth. Returns True if anything was applied."""
+    by_channel: dict[int, dict[str, Any]] = {}
+    for (idx, field), v in values.items():
+        by_channel.setdefault(idx, {})[field] = v
+    used = False
+    for idx, fields in sorted(by_channel.items()):
+        if idx >= ref.metadata.shape.C:
+            continue
+        used = True
+        cs = panel_channel(panel, idx)
+        if "black" in fields or "white" in fields:
+            black = fields.get("black", cs.black if cs else 0)
+            white = fields.get("white", cs.white if cs else ref.metadata.full_scale)
+            set_levels(panel, ref, idx, black, white)
+        for f in ("lut", "gamma", "invert"):
+            if f in fields:
+                set_channel_field(panel, ref, idx, f, fields[f])
+    return used
+
+
+def propagate_locks(figure: Figure, images: dict[str, ImageRef], edited: list[str],
+                    pre: dict[str, dict], intended: Optional[dict] = None) -> list[str]:
+    """After an edit: for each lock group, the locked channel fields that
+    changed on the FIRST edited panel of the group (or `intended` values
+    for those fields) are applied to every other member. Returns the ids
+    of members changed that were not themselves edited."""
+    done_groups: set[str] = set()
+    propagated: list[str] = []
+    for pid in edited:
+        if pid not in pre:
+            continue
+        p = figure.panel(pid)
+        if p is None or not p.lock_group or p.lock_group in done_groups:
+            continue
+        post = locked_state(p)
+        changed = {k: v for k, v in post.items() if pre[pid].get(k) != v}
+        if not changed:
+            continue
+        done_groups.add(p.lock_group)
+        if intended:            # the typed value, not this panel's clamped copy of it
+            changed.update({k: v for k, v in intended.items() if k in changed})
+        for m in lock_members(figure, p.lock_group):
+            ref = images.get(m.image_id)
+            if m.id == p.id or ref is None:
+                continue
+            before = locked_state(m)
+            apply_locked(m, ref, changed)
+            if locked_state(m) != before and m.id not in edited:
+                propagated.append(m.id)
+    return propagated
+
+
+def lock_panels(panels: list[Panel], images: dict[str, ImageRef], group: str) -> None:
+    """Put panels in one lock group; the others take the first panel's
+    locked channel settings (so the group starts consistent)."""
+    first = panels[0]
+    values = locked_state(first)
+    for p in panels:
+        p.lock_group = group
+        if p is not first and p.image_id in images:
+            apply_locked(p, images[p.image_id], values)
 
 
 def panel_channel(panel: Panel, index: int) -> Optional[ChannelSettings]:
@@ -656,3 +764,167 @@ def replace_image(panel: Panel, new: ImageRef) -> None:
     for c in panel.channels:
         c.white = min(c.white, fs)
         c.black = min(c.black, c.white - 1)
+
+
+# ================================================================== Labels
+# Operations for FigureEditor.edit() on all selected panels. A label is
+# identified across panels by (text, position): editing or deleting a row
+# of the Labels tab acts on every selected panel holding that label.
+
+LabelKey = tuple[str, str]
+
+
+def label_key(label: PanelLabel) -> LabelKey:
+    return label.text, label.position
+
+
+def add_label(panel: Panel, ref: ImageRef, label: PanelLabel) -> bool:
+    """Append a copy; skipped if the panel already has the same label."""
+    if any(label_key(lb) == label_key(label) for lb in panel.labels):
+        return False
+    panel.labels.append(label.model_copy(deep=True))
+    return True
+
+
+def update_labels(panel: Panel, ref: ImageRef, key: LabelKey, fields: dict[str, Any]) -> bool:
+    found = False
+    for i, lb in enumerate(panel.labels):
+        if label_key(lb) == key:
+            panel.labels[i] = PanelLabel.model_validate({**lb.model_dump(), **fields})
+            found = True
+    return found
+
+
+def delete_labels(panel: Panel, ref: ImageRef, key: LabelKey) -> bool:
+    n = len(panel.labels)
+    panel.labels = [lb for lb in panel.labels if label_key(lb) != key]
+    return len(panel.labels) != n
+
+
+def set_scale_bar(panel: Panel, ref: ImageRef, fields: dict[str, Any]) -> bool:
+    """Skipped (False) for uncalibrated images: they cannot show a bar."""
+    if not ref.metadata.calibration.is_calibrated:
+        return False
+    panel.scale_bar = ScaleBar.model_validate({**panel.scale_bar.model_dump(), **fields})
+    return True
+
+
+def set_border(panel: Panel, ref: ImageRef, fields: dict[str, Any]) -> bool:
+    panel.border = PanelBorder.model_validate({**panel.border.model_dump(), **fields})
+    return True
+
+
+def copy_panels(panels: Iterable[Panel]) -> list[dict]:
+    return [p.model_dump(mode="json") for p in panels]
+
+
+def pasted_panels(copied: list[dict], offset_mm: float = 5.0) -> list[Panel]:
+    """New panels from copied ones: new ids, shifted by offset_mm, labels,
+    shapes and every setting kept; not in any lock group. A parent copied
+    with its insets keeps the link within the pasted set; an inset copied
+    without its parent becomes an ordinary panel."""
+    out, old_to_new = [], {}
+    for d in copied:
+        p = Panel.model_validate(d)
+        nid = new_id()
+        old_to_new[p.id] = nid
+        out.append(p.model_copy(update={
+            "id": nid, "x_mm": round(p.x_mm + offset_mm, 6),
+            "y_mm": round(p.y_mm + offset_mm, 6), "lock_group": None}))
+    I.remap_links(out, old_to_new)
+    return out
+
+
+# ================================================================== Shapes
+# Shapes live in raw-image pixel coordinates (they follow crop, zoom and
+# orientation); stroke width and arrowhead are in page points.
+
+def add_shape(panel: Panel, ref: ImageRef, shape: Shape) -> bool:
+    panel.shapes.append(shape.model_copy(deep=True))
+    return True
+
+
+def update_shapes(panel: Panel, ref: ImageRef, ids: Iterable[str], fields: dict[str, Any]) -> bool:
+    ids = set(ids)
+    found = False
+    for i, sh in enumerate(panel.shapes):
+        if sh.id in ids:
+            panel.shapes[i] = Shape.model_validate({**sh.model_dump(), **fields})
+            found = True
+    return found
+
+
+def move_shapes(panel: Panel, ref: ImageRef, ids: Iterable[str], dx: float, dy: float) -> bool:
+    """Translate by (dx, dy) RAW pixels."""
+    ids = set(ids)
+    found = False
+    for sh in panel.shapes:
+        if sh.id in ids:
+            sh.points = [(round(x + dx, 4), round(y + dy, 4)) for x, y in sh.points]
+            found = True
+    return found
+
+
+def delete_shapes(panel: Panel, ref: ImageRef, ids: Iterable[str]) -> bool:
+    ids = set(ids)
+    n = len(panel.shapes)
+    panel.shapes = [sh for sh in panel.shapes if sh.id not in ids]
+    return len(panel.shapes) != n
+
+
+def paste_shapes(panel: Panel, ref: ImageRef, shapes: list[dict]) -> bool:
+    """Same raw coordinates, new ids (one copy per target panel)."""
+    for d in shapes:
+        panel.shapes.append(Shape.model_validate({**d, "id": new_id()}))
+    return bool(shapes)
+
+
+# ===================================================== consistency helpers
+@dataclass(frozen=True)
+class ChannelMismatch:
+    """Same channel index, different channel identity (name or wavelength)
+    between panels sharing rendering. Kept for the step-6 consistency check."""
+    index: int
+    variants: tuple[str, ...]
+    panel_ids: tuple[str, ...]
+
+    def message(self) -> str:
+        return f"channel {self.index + 1} differs: " + " vs ".join(self.variants)
+
+
+def channel_identity(ref: ImageRef, index: int) -> str:
+    info = next((c for c in ref.metadata.channels if c.index == index), None)
+    if info is None:
+        return "?"
+    name = info.name or f"Ch{index + 1}"
+    return f"{name} ({info.wavelength_nm:g} nm)" if info.wavelength_nm else name
+
+
+def channel_mismatches(panels: Iterable[Panel], images: dict[str, ImageRef]) -> list[ChannelMismatch]:
+    """For each channel index present in several panels' images: the
+    different (name, wavelength) identities, if more than one."""
+    by_index: dict[int, dict[str, list[str]]] = {}
+    for p in panels:
+        ref = images.get(p.image_id)
+        if ref is None:
+            continue
+        for idx in range(ref.metadata.shape.C):
+            by_index.setdefault(idx, {}).setdefault(channel_identity(ref, idx), []).append(p.id)
+    out = []
+    for idx, ident in sorted(by_index.items()):
+        if len(ident) > 1:
+            out.append(ChannelMismatch(idx, tuple(ident), tuple(i for ids in ident.values()
+                                                                for i in ids)))
+    return out
+
+
+def locked_settings_differ(panels: list[Panel]) -> list[Panel]:
+    """Panels whose locked settings (on the channels they share with the
+    first) differ from the first panel's: those a lock would change."""
+    first = locked_state(panels[0])
+    out = []
+    for p in panels[1:]:
+        st = locked_state(p)
+        if any(first[k] != v for k, v in st.items() if k in first):
+            out.append(p)
+    return out

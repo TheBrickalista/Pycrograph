@@ -257,7 +257,32 @@ Bump `PROJECT_FORMAT_VERSION` to 2 with a migration (`Figure.page` → `PageSetu
    labels (step 4). Presets are app preferences, not project data (not logged); applying one
    to a figure is logged.
 4. **Labels, scale bar, border** with tokens.
+   *Done.* Labels tab: a row = one (text, position) across the selected panels; tokens
+   resolved at render (`labels.py`), unresolved ones drawn as "?" and reported (status bar,
+   Labels tab). `[time]` picks s / min / h by magnitude; `[z:um]` uses `z_offset` in µm;
+   `[image]` is the file name without extension; `[channels]` joins with " / " and shows
+   grey/white LUT channels in the label colour. Outside labels stack outward, first label
+   nearest the panel; label colour "auto" = black outside, white inside. Scale bar and
+   border apply to all selected panels (scale bar skipped on uncalibrated images, greyed when
+   none is calibrated); the border is drawn inside the panel edge. Overlays are vector child
+   items tagged by kind (`ui/panel_overlays.py`) for the export. Panel copy/paste
+   (Ctrl+C / Ctrl+V on the canvas) keeps labels; pasted panels are not locked. The condition
+   grid adds `[kv:…]` / `[image]` row labels and `[channels]` column labels and reserves room
+   for them.
 5. **Insets & shapes** (dynamic insets).
+   *Done.* Create inset = draw a rectangle on the selected panel (canvas draw mode); the
+   inset copies the parent's rendering, T/Z and orientation (not labels, shapes or lock
+   group), shows the region at 2× magnification and is placed right of the parent, moved
+   down past other panels, kept on the page, snapped. The rectangle on the parent is derived
+   from the inset's crop (`insets.rect_on_parent`); with the parent selected it can be
+   dragged or resized by its corner (aspect kept: the inset panel keeps its page size, its
+   crop and magnification change). Insets are numbered per parent in figure order; colours
+   cycle through yellow, cyan, magenta, green, orange, white. The follow flags sync the inset
+   inside the parent's gesture (one log entry per inset). Shapes: two raw-pixel points;
+   stroke and arrowhead in page points; clipped to the panel; selected by clicking once the
+   panel is selected. `[time]` in a lock group / montage uses one unit chosen from the
+   group's largest time; channel name / wavelength mismatches between panels sharing
+   rendering are reported (`figures.channel_mismatches`, reused by the step-6 check).
 6. **Export** (SVG/PDF/TIFF + sidecar JSON + info page) and **consistency check**, then
    archives.
 
@@ -268,7 +293,16 @@ Bump `PROJECT_FORMAT_VERSION` to 2 with a migration (`Figure.page` → `PageSetu
    library settings until the panel is edited?
 3. Lock groups: rely on multi-selection only (OMERO), or also keep persistent "linked"
    rows/columns that propagate edits automatically (handoff §7.2 "lock levels")?
-   Proposal: both — multi-select for editing, `lock_group` for propagation + consistency check.
+   **Decided: both** — multi-select for editing, `lock_group` for propagation + consistency
+   check. **Rule**: a lock shares **black, white, gamma, LUT and invert per channel index**,
+   never visibility, T/Z, projection, crop, orientation or labels. An edit of channel *i* on
+   a locked panel applies to channel *i* of every panel of its group, values clamped to each
+   image's bit depth (the typed value is clamped per image, not copied from another panel's
+   clamp); panels lacking channel *i* are skipped. One gesture = one undo step, one log entry
+   per panel changed. Locking a selection makes the others take the first panel's locked
+   settings, so a group always starts consistent. Replace image does not propagate (its
+   level clamp is not an edit). A condition grid with shared rendering is one group; one that
+   keeps each image's rendering has one group per row.
 4. One figure per tab vs a figure dropdown in a single Figures tab.
 
 ## Sources
