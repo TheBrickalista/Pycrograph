@@ -58,5 +58,22 @@ def test_shared_core_markers_present():
     """Files copied from PysternBlot keep their provenance marker."""
     for rel in ("pycrograph/logchain.py", "pycrograph/jsonsafe.py", "pycrograph/integrity.py",
                 "pycrograph/ui/zoomable_graphics_view.py", "pycrograph/ui/levels_histogram.py",
-                "pycrograph/archive.py"):
+                "pycrograph/archive.py", "scripts/make_version_file.py",
+                "tests/test_make_version_file.py", "tests/test_workflows_hardening.py",
+                ".github/workflows/build-macos.yml", ".github/workflows/build-windows.yml",
+                ".github/workflows/publish.yml", ".github/macos/entitlements.plist",
+                "ci/build-constraints.in"):
         assert "SHARED-CORE candidate (from PysternBlot" in (ROOT / rel).read_text(encoding="utf-8"), rel
+
+
+def test_release_files_present():
+    """What the release workflows need from the source tree."""
+    from PIL import Image
+    with Image.open(ROOT / "pycrograph" / "resources" / "pycrograph_logo.png") as im:
+        assert im.size == (1024, 1024)
+    tmpl = (ROOT / ".github" / "RELEASE_TEMPLATE.md").read_text(encoding="utf-8")
+    assert "Pycrograph-vVERSION-macOS.zip" in tmpl and "Pycrograph-vVERSION-Windows.exe" in tmpl
+    assert (ROOT / "launcher.py").is_file()
+    pyproject = _pyproject()
+    assert "pyinstaller" in " ".join(pyproject["project"]["optional-dependencies"]["build"])
+    assert "twine" in " ".join(pyproject["project"]["optional-dependencies"]["dev"])

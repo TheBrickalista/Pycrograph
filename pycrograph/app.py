@@ -26,6 +26,10 @@ def run(argv: list[str] | None = None) -> int:
     app = QApplication.instance() or QApplication(argv or [])
     app.setOrganizationName("IRCAN")
     app.setApplicationName("Pycrograph")
+    from PySide6.QtGui import QIcon
+    from .selfcheck import logo_path
+    if logo_path().is_file():
+        app.setWindowIcon(QIcon(str(logo_path())))
     ws = Workspace(default_workspace())
     ws.ensure()
     win = MainWindow(ws)

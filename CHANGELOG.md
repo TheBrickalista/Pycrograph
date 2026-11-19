@@ -6,6 +6,31 @@ All notable changes to Pycrograph are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- Release pipeline mirroring PysternBlot (shared-core, same pinned actions and
+  hardening): `publish.yml` (tests → sdist / wheel with hash-pinned build
+  constraints + `twine check` → signed macOS and Windows apps → PyPI trusted
+  publishing, environment `pypi`; pre-releases are not uploaded to PyPI),
+  `build-macos.yml` (arm64, macOS 15+, codesign with hardened runtime,
+  notarization, stapling, bundle checks, asset `Pycrograph-vX-macOS.zip`),
+  `build-windows.yml` (unsigned `.exe` with a version resource, asset
+  `Pycrograph-vX-Windows.exe`).
+- `scripts/make_version_file.py`: accepts PEP 440 pre-releases (`0.2.0b1`);
+  OS bundle / exe versions use `x.y.z(.0)`, the full string stays in the
+  About tab, release tag and asset names.
+- `pycrograph --selfcheck [--selfcheck-out FILE]`: offline check of an
+  installed or packaged app (metadata, resources, Qt plugins, render and
+  export of a synthetic image), run by both app builds on the artifact.
+- App icon (temporary placeholder, `pycrograph/resources/pycrograph_logo.png`).
+- Release-notes template; README install section; documentation restructured
+  (installation, quickstart, user guide, concepts, contributing, licence).
+- Tests: workflow hardening (pinned SHAs, least privilege, no
+  `pull_request_target`, release gating, signing secrets, entitlements),
+  version file with pre-releases, selfcheck.
+
+### Changed
+- `twine` added to the `dev` extra (`uv.lock` updated).
+
 ## [0.2.0] - 2026-11-19
 
 Figure editor, steps 1 to 6 (docs/design/figure-editor.md §6), and project

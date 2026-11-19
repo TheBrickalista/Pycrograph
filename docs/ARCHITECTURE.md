@@ -29,6 +29,7 @@ hash-chained operation log, and a PySide6 `QGraphicsView` UI.
 | `provenance.py` | Export sidecar (pure): per panel source + hash, crop as rendered, orientation, channels, flags, resolved labels, scale-bar basis, insets, shapes |
 | `insets.py` | Dynamic insets (pure): create (2× magnification, placement), rectangle on the parent derived from the inset's crop, edit it back, follow-parent sync, links on copy/paste |
 | `labels.py` | Label tokens resolved at render time ([channels], [time…], [z…], [zoom], [image], [dataset], [tags], [kv:Key]); unresolved → "?" + reported |
+| `selfcheck.py` | `--selfcheck`: offline check of an installed / packaged app (metadata, resources, Qt plugins, render + export), run by the release builds |
 | `scalebar.py` | Scale bar length on the page from the calibration and the viewport scale; reason when unavailable; non-isotropic pixels |
 | `render.py` | `PanelRenderer`: raw plane(s) or max projection → crop by array slicing → `render_composite` → orientation; LRU cache keyed by source hash + settings |
 | `readers/` | `ImageSource` interface (T, Z, C, Y, X; lazy `get_plane`); `open_image_ref` (original or light-archive extract, `extract.py`). `tiff.py`: plain TIFF, MetaMorph TIFF (XML), MetaMorph STK (UIC tags). `metamorph.py`: metadata parsing |
@@ -193,6 +194,20 @@ Provenance of restored light extracts: `provenance.extract_block` (export
 sidecar, source-data sidecar, PDF info page, integrity report) says the
 original is not present, gives the extract's own SHA-256 (the one verified)
 and the original's as recorded only; the consistency check adds an info item.
+
+## Release pipeline
+
+Mirrors PysternBlot (files marked shared-core). `publish.yml` runs on a
+published GitHub release (or manually as a dry run): tests → sdist / wheel
+(`uv build` with `ci/build-constraints.txt`, hash-pinned setuptools) + `twine
+check` → `build-macos.yml` and `build-windows.yml` (called only after the tests
+pass; they attach `Pycrograph-<tag>-macOS.zip` / `-Windows.exe` to the
+release) → PyPI trusted publishing (environment `pypi`), skipped for
+pre-releases. `scripts/make_version_file.py` validates the version (x.y.z or a
+PEP 440 a/b/rc pre-release) for the release-tag check, Info.plist and the
+Windows version resource. Both builds run `--selfcheck` on the artifact.
+`tests/test_workflows_hardening.py` guards permissions, pinned actions and
+runners, credentials, event data in shell, and the release gating.
 
 ## Format migrations
 

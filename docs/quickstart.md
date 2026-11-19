@@ -1,25 +1,25 @@
 # Quickstart
 
-1. **Run** `uv run python -m pycrograph`.
-2. **New Project…** — a project starts with an *Unsorted* dataset.
-   Create datasets for your conditions with **New Dataset…** (or right-click the tree).
-3. **Import Images…** — select MetaMorph `.tif` / `.stk` files. They are
-   registered **by reference**: nothing is copied, the SHA-256 is computed in the
-   background (⏳ in the tree until done). Right-click → *Copy into project* if you
-   want a self-contained project for a small file.
-4. **Select an image.** The centre view shows the composite (Shift+wheel to zoom,
-   drag to pan, double-click or *Fit* to fit). T and Z sliders appear for stacks;
-   the info line shows pixel size and physical field of view.
-5. **Adjust each channel** in the right panel: visibility, LUT (named or custom
-   colour), Black/White (drag the histogram gates, the sliders, or type values),
-   *Auto* (0.1–99.9 percentiles), gamma (flagged when ≠ 1), invert, rotation/flips.
-   A saturation badge reports clipped pixels in the current plane.
-6. **Annotate** in the left panel: tags, rating (★), key–value pairs, and a
-   stain/antibody per channel. Search filters the tree.
-7. **External drive renamed?** Missing images show ⚠. Right-click → *Relink…*,
-   point to one file: Pycrograph verifies it by SHA-256 and offers to fix every
-   other image under the same old folder.
-8. **Integrity Report…** writes a JSON report: source verification, log-chain
-   status, display settings and flags.
+1. **Home → New Project…** A project starts with an *Unsorted* dataset.
+2. **Library → Import Images…** Select MetaMorph `.tif` / `.stk` (or plain /
+   ImageJ TIFF) files. They are registered **by reference**: nothing is copied;
+   the SHA-256 is computed in the background (⏳ in the tree until done).
+3. **Adjust the image's defaults** in the Library: per channel visibility, LUT,
+   Black/White (histogram gates, sliders or typed values), *Auto*, gamma
+   (flagged when ≠ 1), invert; T / Z; rotation and flips.
+4. **Add to Figure** (toolbar or right-click): the image becomes a panel on a
+   journal-width page in the **Figures** tab, with a copy of those settings.
+5. **Lay out** the figure: drag panels (alignment guides, grid snap), resize
+   with the corner handle (the crop grows, the image is never stretched), use
+   *Align*, *Grid*, *Size*, *Align magnification*, or the *Auto* layouts
+   (split channels, montage, condition grid).
+6. **Edit the selected panels** in the inspector: *Preview* (viewport, T/Z,
+   channels, locks), *Labels* (text with tokens such as `[channels]` or
+   `[time:min]`, scale bar, border), *Insets & Shapes*.
+7. **Check consistency**, then **Export…** to PDF / SVG / TIFF / PNG. Each export
+   writes a `.provenance.json` next to the file and one entry in the
+   hash-chained log.
+8. **Home → Export archive…** to hand the project over (light or complete).
 
-Everything is saved automatically after each change.
+Everything is saved automatically after each change; every change can be
+undone in the Figures tab.

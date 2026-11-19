@@ -10,6 +10,14 @@ import sys
 
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
+    if "--selfcheck" in argv:
+        # Offline check of an installed / packaged app (see selfcheck.py).
+        out = None
+        if "--selfcheck-out" in argv:
+            i = argv.index("--selfcheck-out")
+            out = argv[i + 1] if i + 1 < len(argv) else None
+        from .selfcheck import run_selfcheck
+        sys.exit(run_selfcheck(out))
     from .app import run
     run(argv)
 
