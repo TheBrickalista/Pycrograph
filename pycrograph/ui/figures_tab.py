@@ -121,8 +121,9 @@ class FiguresTab(QWidget):
         button(self.a_new)
         button(self.a_rename)
         bar.addSpacing(12)
-        self.a_add = action("Add Image…", self.add_image_dialog,
-                            tip="Add library images as panels (copies their display settings)")
+        self.a_add = action("Add Images…", self.add_image_dialog,
+                            tip="Pick library images (or import new ones) as panels; each copies "
+                                "the image's display settings")
         self.a_delete = action("Delete", self.delete_selected,
                                [QKeySequence.Delete, QKeySequence(Qt.Key_Backspace)])
         self.a_undo = action("Undo", self.undo, QKeySequence.Undo)
@@ -275,7 +276,7 @@ class FiguresTab(QWidget):
         self.figure_combo.setEnabled(has_project and bool(self.project.figures))
         self.a_new.setEnabled(has_project)
         self.a_rename.setEnabled(fig is not None)
-        self.a_add.setEnabled(has_project and bool(self.project.images))
+        self.a_add.setEnabled(has_project)               # the picker offers Import from disk
         self.a_delete.setEnabled(sel)
         self.a_select_all.setEnabled(fig is not None)
         for a in (self.a_check, self.a_export, self.a_export_sources):
@@ -464,15 +465,31 @@ class FiguresTab(QWidget):
         self.status_message.emit(f"Added {len(panels)} panel(s) to {ed.figure.name}")
         return panels
 
-    def add_image_dialog(self) -> None:
-        p = self.project
-        if p is None or not p.images:
-            return
-        refs = sorted(p.images.values(), key=lambda r: r.filename.lower())
-        labels = [r.filename for r in refs]
-        choice, ok = QInputDialog.getItem(self, "Add image", "Image:", labels, 0, False)
-        if ok:
-            self.add_images([refs[labels.index(choice)].id])
+    # Set by the main window: () -> (thumbnails {id: QIcon}, statuses {id: str})
+    # of the Library, and its import flow (dataset id -> imported image ids).
+    library_state: Optional[Callable[[], tuple[dict, dict]]] = None
+    import_handler: Optional[Callable[[str], list[str]]] = None
+
+    def make_add_images_dialog(self):
+        from .add_images_dialog import AddImagesDialog
+        thumbs, status = self.library_state() if self.library_state else ({}, {})
+        dlg = AddImagesDialog(self.project, thumbs, status, self.library_state, self)
+
+        def do_import(dataset_id: str) -> None:
+            if self.import_handler is not None:
+                dlg.after_import(self.import_handler(dataset_id) or [])
+        dlg.import_requested.connect(do_import)
+        return dlg
+
+    def add_image_dialog(self) -> list[Panel]:
+        """The Add Images picker; the chosen images become panels in ONE
+        gesture (tree order, each image once)."""
+        if self.project is None:
+            return []
+        dlg = self.make_add_images_dialog()
+        if dlg.exec() != QDialog.Accepted or not dlg.chosen_ids():
+            return []
+        return self.add_images(dlg.chosen_ids())
 
     def delete_selected(self) -> int:
         ed = self.current_editor()

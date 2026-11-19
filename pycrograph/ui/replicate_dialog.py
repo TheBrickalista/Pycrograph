@@ -57,10 +57,12 @@ class ReplicateDialog(QDialog):
             for k, items in self._sets.items():
                 b = QRadioButton(f"{k} ({len(items)})")
                 group.addButton(b)
-                b.toggled.connect(lambda on: on and self._refresh())
                 self.set_buttons[k] = b
                 row.addWidget(b)
             next(iter(self.set_buttons.values())).setChecked(True)
+            # Connected after the default is set: _refresh needs the table below.
+            for b in self.set_buttons.values():
+                b.toggled.connect(lambda on: on and self._refresh())
             lay.addLayout(row)
         self.table = QTableWidget(0, 4)
         self.table.setHorizontalHeaderLabels(["Panel", "Geometry", "Field", "Will show"])

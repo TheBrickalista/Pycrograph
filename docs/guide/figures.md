@@ -6,7 +6,7 @@ panels** at once.
 
 ## Toolbar
 
-- Figure selector, **New Figure…**, **Rename…**, **Add Image…**, **Delete**,
+- Figure selector, **New Figure…**, **Rename…**, **Add Images…**, **Delete**,
   **Undo / Redo** (every gesture is one undo step), **Fit**, zoom.
 - **Check consistency**, **Export…** (PDF, SVG, TIFF, PNG),
   **Export source data…** (OME-TIFF of the raw crops).
@@ -14,6 +14,29 @@ panels** at once.
   **Size ▾** (same width / height / both), **Align magnification**,
   **Page setup…**, **Auto ▾** (split channels, montage of T or Z, condition
   grid with shared or per-image rendering).
+
+## Adding images
+
+**Add Images…** opens a picker showing the same tree as the Library tab:
+datasets with their image counts, thumbnails, and the source-file status.
+
+- **Search** (name, tag, key/value, channel…) and **minimum rating** filter
+  the tree. Datasets with no matching image are hidden.
+- **Ctrl/Cmd-click** and **Shift-click** select several images. Selecting a
+  dataset (or the project) means all its visible images. The panels are
+  added **in tree order**, in **one undo step**, and an image that belongs to
+  several datasets is added once.
+- **Double-click** an image to add just that image and close the picker.
+  **Add N images** adds the selection, and is disabled when nothing is selected.
+- The preview pane shows the thumbnail and metadata of the current image.
+- Images whose source file is **missing** are greyed out and can't be
+  selected (the tooltip gives the reason). Changed or modified files can still
+  be added, and keep the Library's ⚠ / ⏳ flag.
+- **Import from disk…** registers files by reference into a dataset (the
+  current one is offered first), then refreshes the tree with the new images
+  selected. The action is available even in a project with no images yet.
+- The picker remembers its size, its collapsed datasets and the last dataset
+  you used for the session.
 
 ## Canvas
 

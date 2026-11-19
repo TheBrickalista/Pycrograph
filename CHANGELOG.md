@@ -7,6 +7,20 @@ All notable changes to Pycrograph are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- Figures tab: **Add Images…** picker (`ui/add_images_dialog.py`) replaces
+  the old drop-down. It shows the Library's tree (thumbnails, status, counts)
+  with search, a minimum-rating filter and a preview pane. It supports
+  multi-selection, and selecting a dataset means all its visible images.
+  Panels are added in tree order, once each, in one gesture. Double-click adds
+  one image and closes. Missing images are greyed and can't be selected.
+  **Import from disk…** goes through the main window's import flow and
+  pre-selects the new images. Size, collapsed datasets and the last dataset
+  are remembered for the session. The action is enabled in projects with no
+  images.
+- `ui/image_tree.py`: one tree-filling helper shared by the Library tab and the
+  picker, so the two can't drift apart. Library behaviour is unchanged.
+- Dev dependency `pytest-qt` (≥ 4.5.0, `qt_api = "pyside6"`); UI tests for the
+  picker.
 - Release pipeline mirroring PysternBlot (shared-core, same pinned actions and
   hardening): `publish.yml` (tests → sdist / wheel with hash-pinned build
   constraints + `twine check` → signed macOS and Windows apps → PyPI trusted
@@ -41,6 +55,8 @@ All notable changes to Pycrograph are documented here. The format follows
   keep groups consistent.
 
 ### Fixed
+- Replicate-inset dialog: no longer errors when it opens with several target
+  sets. A radio button's `toggled` signal fired before the table existed.
 - Linked inset groups could diverge silently: resizing a member on the canvas
   or with `set_geometry`, the layout tools (same width / height, align
   magnification) and rotating or flipping a member left the others behind,
