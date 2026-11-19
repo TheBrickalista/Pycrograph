@@ -152,8 +152,13 @@ class PreviewInspector(QScrollArea):
     def _clear(self) -> None:
         while self._lay.count():
             item = self._lay.takeAt(0)
-            if item.widget() is not None:
-                item.widget().deleteLater()
+            w = item.widget()
+            if w is not None:
+                # deleteLater only runs back in the event loop: hide and
+                # detach now so a rebuild never shows the old widgets.
+                w.hide()
+                w.setParent(None)
+                w.deleteLater()
         self.controls.clear()
 
     def set_panels(self, panels: list[Panel]) -> None:
@@ -458,12 +463,15 @@ class PreviewInspector(QScrollArea):
         self._apply(lambda p, r: V.fit(p, r.metadata.shape.X, r.metadata.shape.Y), "Fit viewport")
 
     def pan_by_oriented(self, du: float, dv: float, final: bool = True) -> None:
-        """Displacement in the reference panel's oriented image pixels ->
-        raw pixels, applied to every selected panel."""
-        p0 = self.panels[0]
-        dx, dy = V.unorient_vector(du, dv, p0.rotation_deg, p0.flip_horizontal, p0.flip_vertical)
-        self._apply(lambda p, r: V.pan(p, r.metadata.shape.X, r.metadata.shape.Y, dx, dy),
-                    "Pan", key="viewport.pan", final=final)
+        """An on-screen displacement (du right, dv down, in oriented image
+        pixels) applied to every selected panel through ITS OWN orientation:
+        each image moves the same way on the page, whatever its rotation
+        or flips."""
+        def pan(p: Panel, r: ImageRef) -> bool:
+            dx, dy = V.unorient_vector(du, dv, p.rotation_deg, p.flip_horizontal, p.flip_vertical)
+            V.pan(p, r.metadata.shape.X, r.metadata.shape.Y, dx, dy)
+            return True
+        self._apply(pan, "Pan", key="viewport.pan", final=final)
 
     def rotate(self, delta: int) -> None:
         self._apply(lambda p, r: F.rotate(p, r, delta), "Rotate")

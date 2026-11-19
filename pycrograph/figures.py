@@ -232,12 +232,12 @@ def log_figure_changes(project: Project, figure: Figure, before: Snapshot, opera
                           asset_sha256=sha(new), field=field, old_value=ov, new_value=nv,
                           note=_note(note, f"figure {figure.id}"))
         n += 1
-    fig_keys = [k for k in after if k != "panels" and after[k] != before.get(k)]
-    if fig_keys:
+    fig_changes = leaf_diff({k: v for k, v in before.items() if k != "panels"},
+                            {k: v for k, v in after.items() if k != "panels"})
+    if fig_changes:
+        field, ov, nv = _field_values(fig_changes)
         log_operation(project, operation, target_type="figure", target_id=figure.id,
-                      field=",".join(fig_keys),
-                      old_value={k: before.get(k) for k in fig_keys},
-                      new_value={k: after[k] for k in fig_keys}, note=note)
+                      field=field, old_value=ov, new_value=nv, note=note)
         n += 1
     return n
 
@@ -416,6 +416,29 @@ class FigureEditor:
                 p.x_mm, p.y_mm, p.width_mm, p.height_mm = new
                 changed += 1
         return changed
+
+    # ---- layout ------------------------------------------------------------
+    def layout(self, panel_ids: Iterable[str], fn: Callable[[list[Panel], dict[str, ImageRef]], Any],
+               operation: str, label: str) -> Any:
+        """One layout gesture on the given panels (figure order): fn(panels,
+        refs) changes geometry and/or appends panels to self.figure.panels.
+        One undo step, one log entry per panel changed or added."""
+        ids = set(panel_ids)
+        panels = [p for p in self.figure.panels if p.id in ids]
+        refs = {p.image_id: self.project.images[p.image_id] for p in panels
+                if p.image_id in self.project.images}
+        with self.gesture(operation, label):
+            return fn(panels, refs)
+
+    def set_page(self, page: PageSetup) -> bool:
+        """Page setup (one figure-level log entry). Pages holding panels are
+        never removed."""
+        last = max((p.page for p in self.figure.panels), default=0)
+        if page.n_pages <= last:
+            raise ValueError(f"page {last + 1} holds panels: keep at least {last + 1} page(s)")
+        with self.gesture("figure.page.set", "Page setup"):
+            self.figure.page = page.model_copy(deep=True)
+        return True
 
     # ---- undo / redo -----------------------------------------------------
     def undo(self) -> bool:

@@ -249,6 +249,13 @@ Bump `PROJECT_FORMAT_VERSION` to 2 with a migration (`Figure.page` → `PageSetu
    changes the library image (logged on the image) and is not part of the figure's undo.
 3. **Layout tools**: align, distribute, snap to grid, same size, align magnification, page
    setup + journal presets, split channels / montage / condition grid.
+   *Done.* Same width / height scale the panel with its crop (like align magnification);
+   same width & height scales to the width then fits the height at that scale (crop
+   extended or shrunk). One `lock_group` per auto-layout: locks match by channel index, so
+   one group covers the rows and columns of a condition grid (propagation of locked edits
+   and the consistency check come later). Row/column labels of the condition grid come with
+   labels (step 4). Presets are app preferences, not project data (not logged); applying one
+   to a figure is logged.
 4. **Labels, scale bar, border** with tokens.
 5. **Insets & shapes** (dynamic insets).
 6. **Export** (SVG/PDF/TIFF + sidecar JSON + info page) and **consistency check**, then

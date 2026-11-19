@@ -37,6 +37,7 @@ from ..display import apply_orientation, auto_window, compute_saturation_stats, 
 from ..integrity import build_integrity_report, write_integrity_json
 from ..models import ChannelSettings, ImageRef, Project, SaturationStats
 from ..readers import IMPORT_FILE_FILTER, ImageSource, UnsupportedImageError, open_image
+from ..preferences import load_preferences, save_preferences
 from ..render import PanelRenderer
 from ..storage import (
     HashCancelled, RefStatus, RelinkError, Workspace, add_image_to_dataset, check_image,
@@ -102,6 +103,7 @@ class MainWindow(QMainWindow):
         self._render_timer.timeout.connect(self._render)
 
         self.renderer = PanelRenderer(lambda ref: self.ws.resolve_image_path(self.project, ref))
+        self.prefs = load_preferences(self.ws.root)
         self._build_ui()
         self._build_toolbar()
         self.statusBar().showMessage(f"Pycrograph {__version__} — workspace {self.ws.root}")
@@ -130,12 +132,13 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.library_tab, "Library")
 
         self.figures_tab = FiguresTab(self.renderer, save=self.save,
-                                      before_gesture=self.flush_pending)
+                                      before_gesture=self.flush_pending, prefs=self.prefs,
+                                      save_prefs=self.save_prefs)
         self.figures_tab.status_message.connect(lambda m: self.statusBar().showMessage(m, 4000))
         self.figures_tab.image_defaults_changed.connect(self._on_image_defaults_changed)
         self.tabs.addTab(self.figures_tab, "Figures")
 
-        self.preferences_tab = PreferencesTab()
+        self.preferences_tab = PreferencesTab(self.prefs, save=self.save_prefs)
         self.tabs.addTab(self.preferences_tab, "Preferences")
         self.about_tab = AboutTab()
         self.tabs.addTab(self.about_tab, "About")
@@ -406,6 +409,9 @@ class MainWindow(QMainWindow):
     def save(self) -> None:
         if self.project is not None:
             self.ws.save_project(self.project)
+
+    def save_prefs(self) -> None:
+        save_preferences(self.ws.root, self.prefs)
 
     def _open_from_home(self, project_id: str) -> None:
         if self.project is None or self.project.project.id != project_id:
