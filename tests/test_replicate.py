@@ -299,3 +299,71 @@ def test_size_needs_both_or_neither_calibrated(env):
     assert not I.size_comparable(r["gfp"], r["small"])
     r["gfp"].metadata.calibration.pixel_size_x = None               # both uncalibrated: px
     assert I.size_comparable(r["gfp"], r["small"])
+
+
+# --------------------------------------------------------------- placement
+def bottom(p):
+    return p.y_mm + p.height_mm
+
+
+def test_create_inset_in_a_row_goes_below(env):
+    p, fig, ed, r = env
+    a, b, c = add(ed, r["gfp"], r["rfp"], r["other"])            # one row
+    assert a.y_mm == b.y_mm == c.y_mm and I.in_row(fig, b)
+    src = make_inset(ed, b, (8, 8, 16, 16))
+    assert (src.x_mm, src.y_mm) == (b.x_mm, bottom(b) + 2)       # below, not to the right
+    second = make_inset(ed, b, (30, 30, 8, 8), "src2")           # stacked under the first
+    assert second.x_mm == b.x_mm and second.y_mm >= bottom(src) + 2
+    # No room below (row at the page bottom): the old rule, right of the parent.
+    page_h = fig.page.size_mm[1]
+    for q in (a, b, c):
+        q.y_mm = page_h - q.height_mm
+    low = I.create_inset(fig, a, r["gfp"], (8, 8, 16, 16), "low")
+    assert low.x_mm >= a.x_mm + a.width_mm
+
+
+def test_single_panel_inset_stays_right(env):
+    p, fig, ed, r = env
+    [a] = add(ed, r["gfp"])
+    assert not I.in_row(fig, a)
+    src = make_inset(ed, a, (8, 8, 16, 16))
+    assert src.x_mm == a.x_mm + a.width_mm + 2 and src.y_mm == a.y_mm
+
+
+def test_replicate_below_each_parent_same_gap_and_alignment(env):
+    p, fig, ed, r = env
+    a, b, c = add(ed, r["gfp"], r["rfp"], r["other"])
+    c.height_mm += 7                                             # parents of different heights
+    src = make_inset(ed, a, (8, 8, 16, 16))
+    src.x_mm += 3                                                # left offset 3, gap 5
+    src.y_mm += 3
+    assert I.is_below(src, a)
+    copies = replicate(ed, src, [b, c], mode="size")
+    for cp, parent in zip(copies, (b, c)):
+        assert cp.x_mm - parent.x_mm == pytest.approx(src.x_mm - a.x_mm)
+        assert cp.y_mm - bottom(parent) == pytest.approx(src.y_mm - bottom(a))
+
+
+def test_replicate_row_of_parents_source_elsewhere(env):
+    """A row of parents with the source NOT below its parent (e.g. a project
+    made before this rule): copies still go below each parent, at the gap."""
+    p, fig, ed, r = env
+    a, b = add(ed, r["gfp"], r["rfp"])
+    src = make_inset(ed, a, (8, 8, 16, 16))
+    src.x_mm, src.y_mm = 120.0, 0.0                              # off to the right
+    assert not I.is_below(src, a)
+    [cp] = replicate(ed, src, [b], gap_mm=2.0)
+    assert (cp.x_mm, cp.y_mm) == (b.x_mm, bottom(b) + 2.0)
+
+
+def test_replicate_no_room_below_falls_back(env):
+    p, fig, ed, r = env
+    a, b = add(ed, r["gfp"], r["rfp"])
+    src = make_inset(ed, a, (8, 8, 16, 16))
+    page_h = fig.page.size_mm[1]
+    a.y_mm = b.y_mm = page_h - b.height_mm                     # a row; nothing fits below
+    [cp] = replicate(ed, src, [b])
+    assert bottom(cp) <= page_h + 1e-6 and cp.y_mm >= 0
+    others = [q for q in fig.panels if q.id != cp.id]
+    assert not any(I._overlaps((cp.x_mm, cp.y_mm, cp.width_mm, cp.height_mm),
+                               (q.x_mm, q.y_mm, q.width_mm, q.height_mm)) for q in others)

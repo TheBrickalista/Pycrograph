@@ -16,6 +16,8 @@ settings have a different channel name or wavelength at the same index.
 
 ## Insets
 
+How to: {doc}`../guide/insets` (step by step, with worked cases).
+
 *Create inset* (Insets & Shapes tab): draw a rectangle on a panel; a new panel
 shows that region at twice the magnification, placed to the right. The
 rectangle drawn on the parent is **derived** from the inset's crop: pan, zoom or
@@ -28,11 +30,13 @@ parent with its insets keeps the link in the pasted copies.
 
 ## Replicated insets
 
-*Replicate to…* puts the same inset on other panels — the channels of a split
-row, the conditions of a grid — at the same physical magnification (µm per
-page-mm), colour, width and follow flags, at the same offset from each parent
-when there is room. For each target Pycrograph checks the geometry against the
-source image:
+*Replicate to…* puts the same inset on the panels ticked in its checklist —
+the channels of a split row, the conditions of a grid — at the same physical
+magnification (µm per page-mm), colour, width and follow flags. Each copy goes
+directly below its own parent (same gap and left alignment as the source)
+when the source sits below its parent or the parents form a row. Otherwise it
+goes at the source's offset from its parent, or the nearest free place.
+For each target Pycrograph checks the geometry against the source image:
 
 | Compatibility | Meaning | Possible link |
 |---|---|---|
@@ -47,6 +51,10 @@ source image:
 - **Same size** shows a region of the *same physical size* (µm) in every image,
   centred at the same relative position and kept inside the image; each inset
   can then be moved on its own.
+
+The dialog selects *Same region* only when every ticked target is the same
+image, or the same geometry at the same stage position; otherwise *Same
+size*. It follows the checks until the user picks a mode.
 
 With **Keep linked** the insets form a group, and a group is **one inset
 repeated**: all members have the same page size and orientation (rotation,

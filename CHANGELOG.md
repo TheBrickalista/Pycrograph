@@ -7,6 +7,15 @@ All notable changes to Pycrograph are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- Docs: how-to page **Insets, step by step** (`docs/guide/insets.md`). It
+  covers creating insets (on one panel or several), replicating them (table
+  columns, Same region vs Same size, the registration warning, Keep linked),
+  three worked cases (split channels, MetaMorph files per wavelength, other
+  cells or objectives), working with a linked group, and troubleshooting.
+  It is linked from the Figures guide and from *Locks and insets*.
+- `scripts/make_inset_screenshots.py`: regenerates the guide's screenshots
+  (`docs/_static/img/insets-*.png`) offscreen from synthetic images, with a
+  smoke test so it keeps working when the UI changes.
 - Figures tab: **Add Images…** picker (`ui/add_images_dialog.py`) replaces
   the old drop-down. It shows the Library's tree (thumbnails, status, counts)
   with search, a minimum-rating filter and a preview pane. It supports
@@ -69,6 +78,33 @@ All notable changes to Pycrograph are documented here. The format follows
   divergence (`insets.group_invariant_issues`).
 
 ### Changed
+- **Replicate inset dialog is now a checklist.** It lists every panel of the
+  figure that can receive the inset (the parent's split / lock group first,
+  then figure order). The selected panels are pre-checked, otherwise the
+  group, otherwise none. **All / None / Same image / Same geometry** quick
+  checks are added, and the button reads **Replicate to N panels** (disabled
+  at 0). `replicate_prompt(src, sets)` is unchanged, and `sets` gains
+  "Eligible panels".
+- **Replicate to…** is enabled whenever exactly one inset is selected, or a
+  parent with exactly one inset. When it is greyed out, its tooltip says why
+  (*Select an inset first*, *Select only one inset to replicate*, *This panel
+  has N insets…*, *No other panel in the figure to replicate to*).
+- **Default mode:** Same region only if every checked target is the same
+  image, or the same geometry at the same stage position; otherwise Same
+  size. It is recomputed when the checks change, until the user clicks a
+  mode. The warning text is unchanged.
+- **Placement:** when the source inset sits below its parent, or the parents
+  form a row (split channels, a lock group in a row), each copy goes directly
+  below its own parent, with the same vertical gap and left alignment.
+  Otherwise the offset-then-free-place rule still applies. *Create inset* on
+  a parent that is part of a row places the inset below it when there is room.
+- Inspector group line: *Linked group: N insets, same region* (or *same size*
+  / *mixed*). The internal group id is no longer shown.
+- Status bar after *Create inset*: "Inset created — use Replicate to… to
+  repeat it on other panels".
+- `scripts/make_inset_screenshots.py` forces `QLocale(English, UnitedStates)`
+  so screenshots show "2.0 mm". The screenshots and *Insets, step by step*
+  are updated to the checklist flow and the new default rule.
 - `twine` added to the `dev` extra (`uv.lock` updated).
 - Project format version 3: `InsetStyle.region_group` / `region_link`
   (older projects are migrated on load, logged as `project.migrate`).

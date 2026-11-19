@@ -110,13 +110,69 @@ def place(figure: Figure, parent: Panel, w: float, h: float, gap_mm: float,
     return round(x, 6), round(max(0.0, y), 6)
 
 
+ROW_TOL_MM = 0.5
+
+
+def _rect(p: Panel) -> Rect:
+    return (p.x_mm, p.y_mm, p.width_mm, p.height_mm)
+
+
+def in_row(figure: Figure, parent: Panel) -> bool:
+    """Another ordinary panel on the same page has its top edge level with
+    the parent's (within ROW_TOL_MM): the parent is part of a row."""
+    return any(q.id != parent.id and q.inset_of is None and q.page == parent.page
+               and abs(q.y_mm - parent.y_mm) <= ROW_TOL_MM for q in figure.panels)
+
+
+def is_below(inset: Panel, parent: Panel) -> bool:
+    """The inset sits under its parent (top at or past the parent's bottom,
+    overlapping it horizontally)."""
+    return (inset.page == parent.page
+            and inset.y_mm >= parent.y_mm + parent.height_mm - 1e-6
+            and inset.x_mm < parent.x_mm + parent.width_mm
+            and parent.x_mm < inset.x_mm + inset.width_mm)
+
+
+def place_below(figure: Figure, parent: Panel, w: float, h: float, gap_mm: float,
+                extra: Sequence[Panel] = (), dx: float = 0.0,
+                push: bool = False) -> Optional[tuple[float, float]]:
+    """Directly below the parent: left edge at parent.x + dx, top at the
+    parent's bottom + gap_mm. With `push`, moved further down past panels it
+    would overlap (and snapped to the page grid, like place()). None when
+    there is no room (off the page, or an overlap without `push`)."""
+    page_w, page_h = figure.page.size_mm
+    x, y = parent.x_mm + dx, parent.y_mm + parent.height_mm + gap_mm
+    others = [_rect(q) for q in list(figure.panels) + list(extra)
+              if q.page == parent.page and q.id != parent.id]
+    if push:
+        if figure.page.snap:
+            g = figure.page.grid_mm
+            x, y = -(-x // g) * g, -(-y // g) * g
+        moved = True
+        while moved:
+            moved = False
+            for r in others:
+                if _overlaps((x, y, w, h), r):
+                    y = r[1] + r[3] + gap_mm
+                    if figure.page.snap:
+                        y = -(-y // figure.page.grid_mm) * figure.page.grid_mm
+                    moved = True
+    if x < -1e-6 or y < -1e-6 or x + w > page_w + 1e-6 or y + h > page_h + 1e-6:
+        return None
+    if any(_overlaps((x, y, w, h), r) for r in others):
+        return None
+    return round(x, 6), round(y, 6)
+
+
 def create_inset(figure: Figure, parent: Panel, ref: ImageRef, raw_rect: Rect,
                  new_id: str, magnification: float = DEFAULT_MAGNIFICATION,
                  gap_mm: float = 2.0) -> Panel:
     """A new inset of `parent` showing `raw_rect` (raw pixels) at
     `magnification` × the parent's (µm per page-mm divided by it), placed
     right of the parent. Rendering, T/Z and orientation copied from the
-    parent; labels, shapes and lock group are not."""
+    parent; labels, shapes and lock group are not. A parent that is part of
+    a row (split channels, a lock group laid out in a row…) gets the inset
+    directly below it when there is room, so the row stays a row."""
     s = ref.metadata.shape
     ppm = V.px_per_mm(parent, s.X, s.Y) / magnification
     x, y, w, h = raw_rect
@@ -126,7 +182,9 @@ def create_inset(figure: Figure, parent: Panel, ref: ImageRef, raw_rect: Rect,
         "inset_style": InsetStyle(color=next_color(figure, parent.id)),
         "width_mm": round(ow / ppm, 6), "height_mm": round(oh / ppm, 6)})
     V.set_view(inset, x + w / 2.0, y + h / 2.0, ppm)
-    inset.x_mm, inset.y_mm = place(figure, parent, inset.width_mm, inset.height_mm, gap_mm)
+    below = place_below(figure, parent, inset.width_mm, inset.height_mm, gap_mm, push=True) \
+        if in_row(figure, parent) else None
+    inset.x_mm, inset.y_mm = below or place(figure, parent, inset.width_mm, inset.height_mm, gap_mm)
     return inset
 
 
@@ -324,8 +382,10 @@ def replicate_inset(figure: Figure, src_inset: Panel, targets: Iterable[Panel],
     centre, clamped (skipped when only one of the two images is calibrated:
     µm cannot be matched to pixels). Default: "region" if compatible, else "size" (per
     target). Same physical magnification, colour, width and flags as the
-    source; placed at the source's offset from its parent, or by place() if
-    that overlaps. With `link`, source and copies share a region_group (the
+    source. Placement: directly below each target when the source sits below
+    its parent or the parents form a row (same vertical gap and left offset as
+    the source); otherwise at the source's offset from its parent; place() if
+    that position is taken or off the page. With `link`, source and copies share a region_group (the
     source's if it has one) and each copy's region_link is the mode it got.
     The copies are returned, not added to the figure."""
     parent = figure.panel(src_inset.inset_of or "")
@@ -336,6 +396,19 @@ def replicate_inset(figure: Figure, src_inset: Panel, targets: Iterable[Panel],
     src_rect = _crop_rect(src_inset, src_ref)
     src_phys = physical_per_mm(src_inset, src_ref)
     dx, dy = src_inset.x_mm - parent.x_mm, src_inset.y_mm - parent.y_mm
+    targets = list(targets)
+    # Below rule: the source sits below its parent, or the parents form a row
+    # (split channels, a lock group in a row): each copy goes directly below
+    # its own parent, same vertical gap and left alignment as the source (or
+    # left-aligned at gap_mm when the source is elsewhere).
+    below: Optional[tuple[float, float]] = None
+    if is_below(src_inset, parent):
+        below = (dx, src_inset.y_mm - (parent.y_mm + parent.height_mm))
+    else:
+        parents = [parent] + [t for t in targets if t.inset_of is None and t.id != parent.id]
+        if len(parents) > 1 and all(t.page == parent.page and abs(t.y_mm - parent.y_mm) <= ROW_TOL_MM
+                                    for t in parents):
+            below = (0.0, gap_mm)
     group = st.region_group or (f"region:{new_id()}" if link else None)
     out: list[Panel] = []
     for tgt in targets:
@@ -361,14 +434,20 @@ def replicate_inset(figure: Figure, src_inset: Panel, targets: Iterable[Panel],
         inset.crop = Crop(x=round(rect[0], 6), y=round(rect[1], 6), w=round(rect[2], 6),
                           h=round(rect[3], 6))
         sync_inset(inset, tgt, ref)
-        x, y = tgt.x_mm + dx, tgt.y_mm + dy
-        page_w, page_h = figure.page.size_mm
-        box = (x, y, inset.width_mm, inset.height_mm)
-        clash = (x < 0 or y < 0 or x + inset.width_mm > page_w or y + inset.height_mm > page_h
-                 or any(_overlaps(box, (q.x_mm, q.y_mm, q.width_mm, q.height_mm))
-                        for q in list(figure.panels) + out if q.page == tgt.page))
-        inset.x_mm, inset.y_mm = (place(figure, tgt, inset.width_mm, inset.height_mm, gap_mm, out)
-                                  if clash else (round(x, 6), round(y, 6)))
+        pos = None
+        if below:
+            pos = place_below(figure, tgt, inset.width_mm, inset.height_mm, below[1], out,
+                              dx=below[0])
+        else:
+            x, y = tgt.x_mm + dx, tgt.y_mm + dy
+            page_w, page_h = figure.page.size_mm
+            box = (x, y, inset.width_mm, inset.height_mm)
+            clash = (x < 0 or y < 0 or x + inset.width_mm > page_w or y + inset.height_mm > page_h
+                     or any(_overlaps(box, _rect(q))
+                            for q in list(figure.panels) + out if q.page == tgt.page))
+            pos = None if clash else (round(x, 6), round(y, 6))
+        inset.x_mm, inset.y_mm = pos or place(figure, tgt, inset.width_mm, inset.height_mm,
+                                              gap_mm, out)
         out.append(inset)
     if link and out and st.region_group is None:
         src_inset.inset_style = st.model_copy(update={

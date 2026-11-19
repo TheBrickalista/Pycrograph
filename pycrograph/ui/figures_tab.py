@@ -874,6 +874,7 @@ class FiguresTab(QWidget):
         with ed.gesture("figure.inset.create", "Create inset"):
             ed.figure.panels.append(inset)
         self.refresh(selected={inset.id})
+        self.status_message.emit("Inset created — use Replicate to… to repeat it on other panels")
         return inset.id
 
     def _on_inset_rect(self, inset_id: str, parent_id: str, rect, final: bool) -> None:
@@ -907,34 +908,76 @@ class FiguresTab(QWidget):
                                                 panel_ids=[inset_id]))
 
     # ---- replicate --------------------------------------------------------
+    def replicate_source(self) -> tuple[Optional[Panel], str]:
+        """(the inset to replicate, "") from the selection — exactly one
+        inset, or else exactly one parent with exactly one inset — or
+        (None, why not) for the greyed button's tooltip."""
+        fig = self.current_figure()
+        sel = self.selected_panels()
+        if fig is None or not sel:
+            return None, "Select an inset first"
+        insets = [p for p in sel if p.inset_of]
+        if len(insets) == 1:
+            return insets[0], ""
+        if len(insets) > 1:
+            return None, "Select only one inset to replicate"
+        parents = [(p, I.insets_of(fig, p.id)) for p in sel]
+        parents = [(p, kids) for p, kids in parents if kids]
+        if not parents:
+            return None, "Select an inset first"
+        if len(parents) > 1:
+            return None, "Select only one inset to replicate"
+        kids = parents[0][1]
+        if len(kids) > 1:
+            return None, f"This panel has {len(kids)} insets: select the one to replicate"
+        return kids[0], ""
+
     def replicate_candidates(self, inset_id: Optional[str] = None,
                              target_ids: Optional[list[str]] = None):
-        """(source inset, {"Selected panels": [...], "All panels of this split /
-        lock group": [...]}) — targets as (panel, ref, display name)."""
+        """(source inset, sets). sets: "Selected panels" (the selection, or
+        `target_ids`), "All panels of this split / lock group" (the parent's),
+        and "Eligible panels" — every panel that can receive the inset, the
+        parent's group first, then figure order (the dialog's checklist).
+        Entries are (panel, ref, display name)."""
         fig = self.current_figure()
         if fig is None:
             return None, {}
-        sel = self.selected_panels()
         if inset_id is None:
-            insets = [p for p in sel if p.inset_of]
-            if len(insets) != 1:
-                return None, {}
-            inset_id = insets[0].id
-        src = fig.panel(inset_id)
-        parent = fig.panel(src.inset_of) if src and src.inset_of else None
+            src, _why = self.replicate_source()
+        else:
+            src = fig.panel(inset_id)
+        parent = fig.panel(src.inset_of) if src is not None and src.inset_of else None
         if parent is None:
             return None, {}
 
         def entry(p: Panel):
             return (p, self.ref(p), f"Panel {fig.panels.index(p) + 1} — "
                                     f"{self.ref(p).filename if self.ref(p) else '?'}")
-        ids = target_ids if target_ids is not None else [p.id for p in sel]
-        chosen = [fig.panel(i) for i in ids]
-        chosen = [p for p in chosen if p and p.inset_of is None and p.id != parent.id and self.ref(p)]
-        group = [p for p in F.lock_members(fig, parent.lock_group)
-                 if p.inset_of is None and p.id != parent.id and self.ref(p)]
+
+        def ok(p: Optional[Panel]) -> bool:
+            return p is not None and p.inset_of is None and p.id != parent.id and self.ref(p) is not None
+        ids = target_ids if target_ids is not None else [p.id for p in self.selected_panels()]
+        chosen = [p for p in (fig.panel(i) for i in ids) if ok(p)]
+        chosen.sort(key=fig.panels.index)
+        group = [p for p in F.lock_members(fig, parent.lock_group) if ok(p)]
+        eligible = group + [p for p in fig.panels if ok(p) and p not in group]
         return src, {"Selected panels": [entry(p) for p in chosen],
-                     "All panels of this split / lock group": [entry(p) for p in group]}
+                     "All panels of this split / lock group": [entry(p) for p in group],
+                     "Eligible panels": [entry(p) for p in eligible]}
+
+    @staticmethod
+    def default_checked(sets: dict) -> list[str]:
+        """Pre-checked targets: the selected panels, else the parent's split /
+        lock group, else none."""
+        for key in ("Selected panels", "All panels of this split / lock group"):
+            if sets.get(key):
+                return [p.id for p, _r, _n in sets[key]]
+        return []
+
+    def make_replicate_dialog(self, src: Panel, sets: dict):
+        from .replicate_dialog import ReplicateDialog
+        return ReplicateDialog(self.ref(src), sets.get("Eligible panels", []),
+                               self.default_checked(sets), self)
 
     def replicate_inset(self, inset_id: str, target_ids: list[str], mode: Optional[str] = None,
                         link: bool = True) -> list[str]:
@@ -960,18 +1003,23 @@ class FiguresTab(QWidget):
     def replicate_inset_dialog(self, inset_id: Optional[str] = None,
                                target_ids: Optional[list[str]] = None) -> list[str]:
         src, sets = self.replicate_candidates(inset_id, target_ids)
-        if src is None or not any(sets.values()):
-            self.status_message.emit("Replicate: select one inset and the panels to copy it to")
+        if src is None:
+            self.status_message.emit("Replicate: " + (self.replicate_source()[1]
+                                                      or "select one inset"))
+            return []
+        if not sets.get("Eligible panels"):
+            self.status_message.emit("Replicate: no other panel in the figure to replicate to")
             return []
         if self.replicate_prompt is not None:
             answer = self.replicate_prompt(src, sets)
         else:
-            from .replicate_dialog import ReplicateDialog
-            dlg = ReplicateDialog(self.ref(src), sets, self)
+            dlg = self.make_replicate_dialog(src, sets)
             answer = (dlg.mode(), dlg.link(), dlg.target_ids()) if dlg.exec() == QDialog.Accepted else None
         if not answer:
             return []
         mode, link, ids = answer
+        if not ids:
+            return []
         return self.replicate_inset(src.id, ids, mode, link)
 
     def unlink_from_group(self) -> None:

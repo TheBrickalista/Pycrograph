@@ -45,6 +45,19 @@ if TYPE_CHECKING:                                   # pragma: no cover
 SHAPE_KINDS = ("arrow", "line", "rect", "ellipse")
 
 
+REPLICATE_TIP = ("The same inset on other panels: tick them in the list (the selected panels, "
+                 "or the parent's split / lock group, are pre-checked)")
+
+
+def group_line(members: list[Panel]) -> str:
+    """'Linked group: N insets, same region' (or same size / mixed) — the
+    internal group id is never shown."""
+    links = {m.inset_style.region_link for m in members if m.inset_style is not None}
+    how = "mixed" if len(links) > 1 else "same region" if links == {"region"} else "same size"
+    return (f"Linked group: {len(members)} insets, {how}. Size, orientation and region apply "
+            "to all of them; Unlink to change one alone.")
+
+
 class InsetsInspector(QScrollArea):
     def __init__(self, tab: "FiguresTab"):
         super().__init__()
@@ -81,8 +94,7 @@ class InsetsInspector(QScrollArea):
         self.create_btn.clicked.connect(self.tab.start_create_inset)
         lay.addWidget(self.create_btn)
         self.replicate_btn = QPushButton("Replicate to…")
-        self.replicate_btn.setToolTip("The same inset on the other selected panels, or on every "
-                                      "panel of the parent's split / lock group")
+        self.replicate_btn.setToolTip(REPLICATE_TIP)
         self.replicate_btn.clicked.connect(lambda: self.tab.replicate_inset_dialog())
         lay.addWidget(self.replicate_btn)
         grow = QHBoxLayout()
@@ -201,8 +213,11 @@ class InsetsInspector(QScrollArea):
         self.create_btn.setEnabled(bool(plain) and all(self.tab.ref(p) is not None for p in plain))
         self.create_btn.setText("Create inset…" if len(plain) <= 1 else
                                 f"Create inset… (then offer it on {len(plain) - 1} other panel(s))")
-        src, sets = self.tab.replicate_candidates()
-        self.replicate_btn.setEnabled(src is not None and any(sets.values()))
+        src, why = self.tab.replicate_source()
+        if src is not None and not self.tab.replicate_candidates(src.id)[1].get("Eligible panels"):
+            src, why = None, "No other panel in the figure to replicate to"
+        self.replicate_btn.setEnabled(src is not None)
+        self.replicate_btn.setToolTip(REPLICATE_TIP if src is not None else why)
         self.draw_btn.setEnabled(single)
         insets = [p for p in P if p.inset_of and p.inset_style]
         lines = []
@@ -224,11 +239,7 @@ class InsetsInspector(QScrollArea):
             parts = []
             for g in groups:
                 members = I.group_members(fig, g)
-                links = sorted({m.inset_style.region_link for m in members})
-                how = " / ".join("same region" if lk == "region" else "same size" for lk in links)
-                parts.append(f"Linked group {g}: {len(members)} insets, {how}. Size, "
-                             "orientation and region apply to all of them; Unlink to change "
-                             "one alone.")
+                parts.append(group_line(members))
             self.group_label.setText("\n".join(parts))
         else:
             self.group_label.setText("Not linked to other insets." if insets else "")

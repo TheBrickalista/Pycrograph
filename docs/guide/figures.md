@@ -62,15 +62,9 @@ Unselected panels have a faint dashed outline, never exported.
   found show as "?" and are listed), ten positions, font and colour; scale bar
   (length, unit, corner, colour, thickness, text, above / below); border drawn
   inside the panel edge.
-- **Insets & Shapes** — *Create inset* (draw a rectangle on the panel: a new
-  panel at 2× magnification, linked to it; with several panels selected, draw
-  on one and the same inset is offered for the others), *Replicate to…* (the
-  selected inset on the other selected panels, or on every panel of its
-  parent's split / lock group; *Same region* or *Same size*, *Keep linked*),
-  the inset's linked group and *Unlink from group* (a linked group is one inset
-  repeated: size, orientation and region changes apply to all its insets),
-  inset style and follow flags; arrows, lines, rectangles and ellipses stored
-  in image pixels.
+- **Insets & Shapes** — insets (create, replicate, linked groups: see
+  {doc}`insets`), inset style and follow flags; arrows, lines, rectangles and
+  ellipses stored in image pixels.
 - **Info** — source, crop, zoom, effective resolution (flagged below the
   page dpi), pixel scale.
 
