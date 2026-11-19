@@ -37,7 +37,20 @@ from raw data with recorded display settings — without a server.
   free-text stain/antibody. T/Z navigation, 90° rotation, flips.
 - Integrity report (JSON).
 
-## Install (development)
+## Install
+
+| Platform | Download | Notes |
+|---|---|---|
+| **macOS** | `Pycrograph-vX.Y.Z-macOS.zip` from the [latest release](https://github.com/TheBrickalista/Pycrograph/releases/latest) | macOS 15 or later, Apple Silicon. Signed and notarized: unzip, move to Applications, open. |
+| **Windows** | `Pycrograph-vX.Y.Z-Windows.exe` from the [latest release](https://github.com/TheBrickalista/Pycrograph/releases/latest) | Not yet code-signed: Windows SmartScreen shows a warning on first run — click **More info → Run anyway**. |
+| **Python (any OS)** | `pip install pycrograph` | Python 3.11 or later; also for Intel Macs (macOS 15 or later). Run with `pycrograph`. |
+
+macOS versions before 15 are not supported (PySide6 6.11's binding modules
+require macOS 15). Pre-releases (e.g. `0.2.0b1`) are published as GitHub
+pre-releases with signed apps, not on PyPI. Full documentation:
+<https://pycrograph.readthedocs.io>.
+
+### Development
 
 ```bash
 git clone https://github.com/TheBrickalista/Pycrograph.git

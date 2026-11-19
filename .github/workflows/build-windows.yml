@@ -1,0 +1,191 @@
+# SHARED-CORE candidate (from PysternBlot: .github/workflows/build-windows.yml) — adapted:
+# Pycrograph names / resources, offline --selfcheck, PEP 440 pre-releases.
+name: Build Windows App
+
+on:
+  # Release builds are called from publish.yml after its tests pass, so signed
+  # binaries are never attached to a release whose tests fail.
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-windows:
+    name: Build Windows .exe
+    runs-on: windows-2025-vs2026
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.13.5"
+
+      - name: Install dependencies
+        run: uv sync --locked --extra build
+
+      - name: Generate .ico icon from logo PNG
+        shell: bash
+        run: |
+          mkdir -p build
+          uv run python - <<'EOF'
+          from PIL import Image
+          import struct, io
+
+          src = Image.open("pycrograph/resources/pycrograph_logo.png").convert("RGBA")
+
+          # Generate all standard Windows icon sizes
+          sizes = [16, 24, 32, 48, 64, 128, 256]
+          frames = []
+          for s in sizes:
+              frame = src.resize((s, s), Image.LANCZOS)
+              frames.append(frame)
+
+          # Save each size as PNG (lossless, best quality)
+          # then bundle into .ico with PNG-compressed frames
+          png_bufs = []
+          for frame in frames:
+              buf = io.BytesIO()
+              frame.save(buf, format="PNG", optimize=True)
+              png_bufs.append(buf.getvalue())
+
+          # Write .ico file manually with PNG-compressed frames
+          # ICO header: reserved(2) + type(2) + count(2)
+          n = len(frames)
+          header = struct.pack("<HHH", 0, 1, n)
+
+          # Each directory entry: width(1) + height(1) + colorcount(1) +
+          # reserved(1) + planes(2) + bitcount(2) + size(4) + offset(4)
+          dir_size = n * 16
+          data_offset = 6 + dir_size
+
+          entries = b""
+          data = b""
+          offset = data_offset
+          for frame, png in zip(frames, png_bufs):
+              w = frame.width if frame.width < 256 else 0  # 0 means 256 in ICO
+              h = frame.height if frame.height < 256 else 0
+              entries += struct.pack("<BBBBHHII", w, h, 0, 0, 1, 32,
+                                    len(png), offset)
+              data += png
+              offset += len(png)
+
+          with open("build/pycrograph.ico", "wb") as f:
+              f.write(header + entries + data)
+
+          print(f"Icon generated: {len(frames)} sizes, "
+                f"{sum(len(p) for p in png_bufs)} bytes total")
+          EOF
+
+      - name: Generate version file
+        run: |
+          uv run python scripts/make_version_file.py pyproject.toml build/version_file.txt
+
+      - name: Build .exe with PyInstaller
+        run: |
+          uv run pyinstaller `
+            --name "Pycrograph" `
+            --windowed `
+            --onefile `
+            --noconfirm `
+            --icon "build/pycrograph.ico" `
+            --add-data "pycrograph/resources;pycrograph/resources" `
+            --copy-metadata pycrograph `
+            --version-file "build/version_file.txt" `
+            launcher.py
+
+      - name: Verify .exe version resource
+        run: |
+          $expected = (uv run python -c "
+          import sys; sys.path.insert(0, 'scripts')
+          from make_version_file import parse_version
+          x, y, z = parse_version('pyproject.toml')
+          print(f'{x}.{y}.{z}.0')
+          ").Trim()
+          $info = (Get-Item "dist\Pycrograph.exe").VersionInfo
+          Write-Host "ProductVersion: $($info.ProductVersion) (expected $expected)"
+          Write-Host "FileVersion: $($info.FileVersion) (expected $expected)"
+          Write-Host "ProductName: $($info.ProductName)"
+          Write-Host "CompanyName: $($info.CompanyName)"
+          $fail = $false
+          if ($info.ProductVersion.Trim() -ne $expected) {
+            Write-Host "::error::ProductVersion ($($info.ProductVersion)) does not match pyproject.toml ($expected)."
+            $fail = $true
+          }
+          if ($info.FileVersion.Trim() -ne $expected) {
+            Write-Host "::error::FileVersion ($($info.FileVersion)) does not match pyproject.toml ($expected)."
+            $fail = $true
+          }
+          if ($fail) { exit 1 }
+
+      - name: Selfcheck built exe
+        run: |
+          # The exe is a GUI-subsystem (no console) build: run it via
+          # Start-Process -Wait so the shell waits, and read the result file.
+          $result = Join-Path $PWD "selfcheck-result.txt"
+          if (Test-Path $result) { Remove-Item $result }
+          $p = Start-Process -FilePath (Join-Path $PWD "dist\Pycrograph.exe") `
+            -ArgumentList "--selfcheck", "--selfcheck-out", $result `
+            -Wait -PassThru
+          $code = $p.ExitCode
+          if (Test-Path $result) {
+            Get-Content $result
+          } else {
+            Write-Host "::error::selfcheck wrote no result file (exit $code)"
+            exit 1
+          }
+          # Offline selfcheck (pycrograph/selfcheck.py): metadata, resources,
+          # Qt plugins, register -> render -> PDF/PNG export.
+          if ($code -eq 0) {
+            Write-Host "selfcheck passed"
+          } else {
+            Write-Host "::error::selfcheck failed (exit $code). The packaged app cannot render or export; see the output above."
+            exit 1
+          }
+
+      - name: Set version tag
+        id: version
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+        run: |
+          if [ "$EVENT_NAME" == "release" ]; then
+            echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=manual-$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Rename .exe
+        shell: bash
+        env:
+          VERSION_TAG: ${{ steps.version.outputs.tag }}
+        run: |
+          mv dist/Pycrograph.exe "Pycrograph-${VERSION_TAG}-Windows.exe"
+
+      - name: Upload as artifact (manual runs)
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: Pycrograph-${{ steps.version.outputs.tag }}-Windows
+          path: Pycrograph-${{ steps.version.outputs.tag }}-Windows.exe
+          retention-days: 7
+
+      - name: Upload to GitHub Release (release runs)
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64 # v3.0.3
+        with:
+          files: Pycrograph-${{ steps.version.outputs.tag }}-Windows.exe
