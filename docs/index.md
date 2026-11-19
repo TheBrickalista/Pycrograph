@@ -21,6 +21,7 @@ quickstart
 guide/home
 guide/library
 guide/figures
+guide/insets
 guide/preferences
 guide/about
 ```

@@ -121,8 +121,9 @@ class FiguresTab(QWidget):
         button(self.a_new)
         button(self.a_rename)
         bar.addSpacing(12)
-        self.a_add = action("Add Image…", self.add_image_dialog,
-                            tip="Add library images as panels (copies their display settings)")
+        self.a_add = action("Add Images…", self.add_image_dialog,
+                            tip="Pick library images (or import new ones) as panels; each copies "
+                                "the image's display settings")
         self.a_delete = action("Delete", self.delete_selected,
                                [QKeySequence.Delete, QKeySequence(Qt.Key_Backspace)])
         self.a_undo = action("Undo", self.undo, QKeySequence.Undo)
@@ -275,7 +276,7 @@ class FiguresTab(QWidget):
         self.figure_combo.setEnabled(has_project and bool(self.project.figures))
         self.a_new.setEnabled(has_project)
         self.a_rename.setEnabled(fig is not None)
-        self.a_add.setEnabled(has_project and bool(self.project.images))
+        self.a_add.setEnabled(has_project)               # the picker offers Import from disk
         self.a_delete.setEnabled(sel)
         self.a_select_all.setEnabled(fig is not None)
         for a in (self.a_check, self.a_export, self.a_export_sources):
@@ -402,9 +403,11 @@ class FiguresTab(QWidget):
                 notes.append(mism)
         if ed.last_synced and final:
             notes.append(f"{len(ed.last_synced)} inset(s) followed")
+        if ed.last_region and final:
+            notes.append(self.linked_note(ed.last_region))
         if notes:
             self.status_message.emit(f"{label}: " + "; ".join(notes))
-        changed = ids + ed.last_propagated + ed.last_synced
+        changed = ids + ed.last_propagated + ed.last_synced + ed.last_region
         self.canvas.update_items(self._visual, self._related_ids(changed, final))
         self.inspector.refresh_values(channels=final)
         if final:
@@ -462,15 +465,31 @@ class FiguresTab(QWidget):
         self.status_message.emit(f"Added {len(panels)} panel(s) to {ed.figure.name}")
         return panels
 
-    def add_image_dialog(self) -> None:
-        p = self.project
-        if p is None or not p.images:
-            return
-        refs = sorted(p.images.values(), key=lambda r: r.filename.lower())
-        labels = [r.filename for r in refs]
-        choice, ok = QInputDialog.getItem(self, "Add image", "Image:", labels, 0, False)
-        if ok:
-            self.add_images([refs[labels.index(choice)].id])
+    # Set by the main window: () -> (thumbnails {id: QIcon}, statuses {id: str})
+    # of the Library, and its import flow (dataset id -> imported image ids).
+    library_state: Optional[Callable[[], tuple[dict, dict]]] = None
+    import_handler: Optional[Callable[[str], list[str]]] = None
+
+    def make_add_images_dialog(self):
+        from .add_images_dialog import AddImagesDialog
+        thumbs, status = self.library_state() if self.library_state else ({}, {})
+        dlg = AddImagesDialog(self.project, thumbs, status, self.library_state, self)
+
+        def do_import(dataset_id: str) -> None:
+            if self.import_handler is not None:
+                dlg.after_import(self.import_handler(dataset_id) or [])
+        dlg.import_requested.connect(do_import)
+        return dlg
+
+    def add_image_dialog(self) -> list[Panel]:
+        """The Add Images picker; the chosen images become panels in ONE
+        gesture (tree order, each image once)."""
+        if self.project is None:
+            return []
+        dlg = self.make_add_images_dialog()
+        if dlg.exec() != QDialog.Accepted or not dlg.chosen_ids():
+            return []
+        return self.add_images(dlg.chosen_ids())
 
     def delete_selected(self) -> int:
         ed = self.current_editor()
@@ -513,9 +532,13 @@ class FiguresTab(QWidget):
         label = "Resize panel" if operation == "figure.panel.resize" else \
             f"Move {len(changes)} panel(s)"
         ed.set_geometry(changes, operation, label)
+        followers = list(ed.last_region)
+        if followers:
+            self.status_message.emit(f"{label}: {self.linked_note(followers)}")
         # Rebuilding the scene here would delete the item whose mouse event
         # is being handled: sync the items (new crop after a resize) later.
-        QTimer.singleShot(0, lambda ids=list(changes): self._sync_after_geometry(ids))
+        QTimer.singleShot(0, lambda ids=list(changes) + followers: self._sync_after_geometry(
+            self._related_ids(ids, False)))
 
     def _sync_after_geometry(self, ids: list[str]) -> None:
         self.canvas.update_items(self._visual, ids)
@@ -540,6 +563,8 @@ class FiguresTab(QWidget):
         result = ed.layout(sel, fn, operation, label)
         added = {p.id for p in ed.figure.panels} - before
         self.refresh(selected=added if select_new and added else set(sel))
+        if ed.last_region:
+            self.status_message.emit(f"{label}: {self.linked_note(ed.last_region)}")
         if added:
             _w, h = ed.figure.page.size_mm
             bottom = max(p.y_mm + p.height_mm for p in ed.figure.panels if p.id in added)
@@ -778,6 +803,11 @@ class FiguresTab(QWidget):
                 out += [q.id for q in F.lock_members(fig, p.lock_group)]
         return list(dict.fromkeys(out))
 
+    @staticmethod
+    def linked_note(followers: list[str]) -> str:
+        return (f"applies to the {len(followers)} linked inset(s) "
+                "(same size, orientation and region; Unlink to change one alone)")
+
     def mismatch_warning(self, panel_ids: list[str]) -> str:
         """Same channel index, different channel name / wavelength between
         panels sharing rendering (kept for the step-6 consistency check)."""
@@ -789,14 +819,22 @@ class FiguresTab(QWidget):
         return ("⚠ " + "; ".join(m.message() for m in mism)) if mism else ""
 
     # =============================================================== insets
+    # Called with (source inset, {label: [(panel, ref, name)]}) -> (mode, link,
+    # target ids) or None; None = ask with ReplicateDialog. Tests set it.
+    replicate_prompt: Optional[Callable] = None
+
     def start_create_inset(self) -> bool:
-        """Draw mode on the single selected panel; the rectangle becomes the
-        inset's region."""
-        sel = self.selected_panels()
-        if len(sel) != 1:
+        """Draw mode on the selected panel(s); the rectangle drawn on one of
+        them becomes the inset's region; with several selected, the same
+        inset is then offered for the others (Replicate dialog)."""
+        sel = [p for p in self.selected_panels() if p.inset_of is None]
+        if not sel:
             return False
-        self.canvas.start_draw(sel[0].id, "rect", self._inset_drawn)
-        self.status_message.emit("Create inset: drag a rectangle on the panel (Esc cancels)")
+        self.canvas.start_draw([p.id for p in sel], "rect", self._inset_drawn)
+        self.status_message.emit("Create inset: drag a rectangle on "
+                                 + ("the panel" if len(sel) == 1 else "one of the panels")
+                                 + " (Esc cancels)")
+        self._create_targets = [p.id for p in sel]
         return True
 
     def _inset_drawn(self, panel_id: str, p0, p1) -> None:
@@ -808,7 +846,10 @@ class FiguresTab(QWidget):
         s = ref.metadata.shape
         x0, y0 = min(p0[0], p1[0]), min(p0[1], p1[1])
         rect = V.panel_rect_to_raw(parent, s.X, s.Y, (x0, y0, abs(p1[0] - p0[0]), abs(p1[1] - p0[1])))
-        self.create_inset(panel_id, rect)
+        others = [i for i in getattr(self, "_create_targets", []) if i != panel_id]
+        iid = self.create_inset(panel_id, rect)
+        if iid and others:
+            self.replicate_inset_dialog(iid, others)
 
     def create_inset(self, parent_id: str, raw_rect) -> Optional[str]:
         """New inset of `parent_id` showing `raw_rect` (raw px, clipped to
@@ -833,6 +874,7 @@ class FiguresTab(QWidget):
         with ed.gesture("figure.inset.create", "Create inset"):
             ed.figure.panels.append(inset)
         self.refresh(selected={inset.id})
+        self.status_message.emit("Inset created — use Replicate to… to repeat it on other panels")
         return inset.id
 
     def _on_inset_rect(self, inset_id: str, parent_id: str, rect, final: bool) -> None:
@@ -855,11 +897,139 @@ class FiguresTab(QWidget):
                 self._before_gesture()
             ed.edit([inset_id], fn, "figure.inset.rect", "Edit inset region",
                     key="inset.rect", final=False)
-            self.canvas.update_items(self._visual, [inset_id])
+            # Linked siblings (and their parents' rectangles) follow live; the
+            # dragged rectangle's own parent is not rebuilt until the commit.
+            live = [inset_id] + [i for i in self._related_ids(ed.last_region, False)
+                                 if i != parent_id]
+            self.canvas.update_items(self._visual, live)
             return
         QTimer.singleShot(0, lambda: self.apply(fn, "Edit inset region", key="inset.rect",
                                                 operation="figure.inset.rect",
                                                 panel_ids=[inset_id]))
+
+    # ---- replicate --------------------------------------------------------
+    def replicate_source(self) -> tuple[Optional[Panel], str]:
+        """(the inset to replicate, "") from the selection — exactly one
+        inset, or else exactly one parent with exactly one inset — or
+        (None, why not) for the greyed button's tooltip."""
+        fig = self.current_figure()
+        sel = self.selected_panels()
+        if fig is None or not sel:
+            return None, "Select an inset first"
+        insets = [p for p in sel if p.inset_of]
+        if len(insets) == 1:
+            return insets[0], ""
+        if len(insets) > 1:
+            return None, "Select only one inset to replicate"
+        parents = [(p, I.insets_of(fig, p.id)) for p in sel]
+        parents = [(p, kids) for p, kids in parents if kids]
+        if not parents:
+            return None, "Select an inset first"
+        if len(parents) > 1:
+            return None, "Select only one inset to replicate"
+        kids = parents[0][1]
+        if len(kids) > 1:
+            return None, f"This panel has {len(kids)} insets: select the one to replicate"
+        return kids[0], ""
+
+    def replicate_candidates(self, inset_id: Optional[str] = None,
+                             target_ids: Optional[list[str]] = None):
+        """(source inset, sets). sets: "Selected panels" (the selection, or
+        `target_ids`), "All panels of this split / lock group" (the parent's),
+        and "Eligible panels" — every panel that can receive the inset, the
+        parent's group first, then figure order (the dialog's checklist).
+        Entries are (panel, ref, display name)."""
+        fig = self.current_figure()
+        if fig is None:
+            return None, {}
+        if inset_id is None:
+            src, _why = self.replicate_source()
+        else:
+            src = fig.panel(inset_id)
+        parent = fig.panel(src.inset_of) if src is not None and src.inset_of else None
+        if parent is None:
+            return None, {}
+
+        def entry(p: Panel):
+            return (p, self.ref(p), f"Panel {fig.panels.index(p) + 1} — "
+                                    f"{self.ref(p).filename if self.ref(p) else '?'}")
+
+        def ok(p: Optional[Panel]) -> bool:
+            return p is not None and p.inset_of is None and p.id != parent.id and self.ref(p) is not None
+        ids = target_ids if target_ids is not None else [p.id for p in self.selected_panels()]
+        chosen = [p for p in (fig.panel(i) for i in ids) if ok(p)]
+        chosen.sort(key=fig.panels.index)
+        group = [p for p in F.lock_members(fig, parent.lock_group) if ok(p)]
+        eligible = group + [p for p in fig.panels if ok(p) and p not in group]
+        return src, {"Selected panels": [entry(p) for p in chosen],
+                     "All panels of this split / lock group": [entry(p) for p in group],
+                     "Eligible panels": [entry(p) for p in eligible]}
+
+    @staticmethod
+    def default_checked(sets: dict) -> list[str]:
+        """Pre-checked targets: the selected panels, else the parent's split /
+        lock group, else none."""
+        for key in ("Selected panels", "All panels of this split / lock group"):
+            if sets.get(key):
+                return [p.id for p, _r, _n in sets[key]]
+        return []
+
+    def make_replicate_dialog(self, src: Panel, sets: dict):
+        from .replicate_dialog import ReplicateDialog
+        return ReplicateDialog(self.ref(src), sets.get("Eligible panels", []),
+                               self.default_checked(sets), self)
+
+    def replicate_inset(self, inset_id: str, target_ids: list[str], mode: Optional[str] = None,
+                        link: bool = True) -> list[str]:
+        """The same inset on each target (insets.replicate_inset), one gesture."""
+        ed = self.current_editor()
+        src = ed.figure.panel(inset_id) if ed else None
+        if src is None or src.inset_of is None:
+            return []
+        targets = [ed.figure.panel(i) for i in target_ids if ed.figure.panel(i)]
+        self.flush()
+        self._before_gesture()
+        with ed.gesture("figure.inset.replicate", f"Replicate inset to {len(targets)} panel(s)"):
+            copies = I.replicate_inset(ed.figure, src, targets, self.project.images, mode, link,
+                                       F.new_id, self.gap_spin.value())
+            ed.figure.panels.extend(copies)
+        self.refresh(selected={c.id for c in copies} | {src.id})
+        modes = [c.inset_style.region_link for c in copies]
+        self.status_message.emit(f"Inset replicated to {len(copies)} panel(s)"
+                                 + (f" ({modes.count('size')} by size)" if "size" in modes else "")
+                                 + (", linked" if link else ""))
+        return [c.id for c in copies]
+
+    def replicate_inset_dialog(self, inset_id: Optional[str] = None,
+                               target_ids: Optional[list[str]] = None) -> list[str]:
+        src, sets = self.replicate_candidates(inset_id, target_ids)
+        if src is None:
+            self.status_message.emit("Replicate: " + (self.replicate_source()[1]
+                                                      or "select one inset"))
+            return []
+        if not sets.get("Eligible panels"):
+            self.status_message.emit("Replicate: no other panel in the figure to replicate to")
+            return []
+        if self.replicate_prompt is not None:
+            answer = self.replicate_prompt(src, sets)
+        else:
+            dlg = self.make_replicate_dialog(src, sets)
+            answer = (dlg.mode(), dlg.link(), dlg.target_ids()) if dlg.exec() == QDialog.Accepted else None
+        if not answer:
+            return []
+        mode, link, ids = answer
+        if not ids:
+            return []
+        return self.replicate_inset(src.id, ids, mode, link)
+
+    def unlink_from_group(self) -> None:
+        """Selected insets leave their region group (a group of one is cleared)."""
+        def fn(ps, _r):
+            for p in ps:
+                if p.inset_style is not None and p.inset_style.region_group:
+                    p.inset_style = p.inset_style.model_copy(update={"region_group": None})
+            I.clear_singleton_groups(self.current_figure())
+        self._layout(fn, "figure.inset.unlink", "Unlink inset")
 
     def set_inset_style(self, **fields) -> tuple[int, int]:
         """Style / follow flags of every selected inset. Turning a follow
@@ -876,15 +1046,19 @@ class FiguresTab(QWidget):
             return True
         return self.apply(fn, "Inset style", what="not an inset", operation="figure.inset.style")
 
-    def detach_insets(self) -> tuple[int, int]:
-        def fn(p: Panel, _r: ImageRef) -> bool:
-            if p.inset_of is None:
-                return False
-            p.inset_of, p.inset_style = None, None
-            return True
-        out = self.apply(fn, "Detach inset", what="not an inset", operation="figure.inset.detach")
-        self.refresh()
-        return out
+    def detach_insets(self) -> int:
+        """Selected insets become ordinary panels (and leave their region
+        group; a group of one is cleared) — one gesture."""
+        n = [0]
+
+        def fn(ps, _r):
+            for p in ps:
+                if p.inset_of is not None:
+                    p.inset_of, p.inset_style = None, None
+                    n[0] += 1
+            I.clear_singleton_groups(self.current_figure())
+        self._layout(fn, "figure.inset.detach", "Detach inset")
+        return n[0]
 
     # =============================================================== shapes
     def start_draw_shape(self, kind: str) -> bool:
@@ -1089,7 +1263,7 @@ class FiguresTab(QWidget):
     def copy_panels(self) -> int:
         sel = self.selected_panels()
         if sel:
-            self.clip_panels = F.copy_panels(sel)
+            self.clip_panels = F.copy_panels(sel, self.current_figure())
             self.status_message.emit(f"{len(sel)} panel(s) copied")
         return len(sel)
 

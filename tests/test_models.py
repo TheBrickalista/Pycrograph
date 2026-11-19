@@ -95,7 +95,7 @@ def test_page_setup():
     assert (ps.width_mm, ps.height_mm) == (89, 247)
     assert ps.size_mm == (89, 247)
     assert ps.model_copy(update={"orientation": "landscape"}).size_mm == (247, 89)
-    assert PROJECT_FORMAT_VERSION == 2
+    assert PROJECT_FORMAT_VERSION == 3
     with pytest.raises(ValidationError):
         PageSetup(n_pages=0)
     with pytest.raises(ValidationError):

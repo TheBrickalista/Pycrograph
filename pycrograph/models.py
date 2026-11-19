@@ -29,7 +29,7 @@ from pydantic import BaseModel, Field
 
 # Bump when the on-disk schema changes incompatibly; storage.load_project
 # refuses files with a higher version than it knows.
-PROJECT_FORMAT_VERSION = 2   # 2: Figure.page is a PageSetup (see migrations.py)
+PROJECT_FORMAT_VERSION = 3   # 2: Figure.page is a PageSetup; 3: InsetStyle region group (migrations.py)
 
 Rotation = Literal[0, 90, 180, 270]
 
@@ -264,6 +264,12 @@ class InsetStyle(BaseModel):
     border_on_inset: bool = True              # matching border drawn on the inset itself
     follow_parent_tz: bool = True             # T, Z, projection follow the parent
     follow_parent_rendering: bool = True      # channel settings follow the parent
+    # Replicated insets (insets.replicate_inset) share a region group: editing
+    # one updates the others — "region": the same raw-pixel rectangle (images
+    # of the same geometry only); "size": the same physical size (µm), each at
+    # its own position.
+    region_group: Optional[str] = None
+    region_link: Literal["region", "size"] = "region"
 
 
 class Shape(BaseModel):

@@ -25,10 +25,13 @@ import tifffile
 
 def metamorph_xml(*, illum="5 TxRed", wavelength=630, px=0.325, exposure_ms=500,
                   acq="20251029 15:42:11.513", z_pos=1234.5, bits=16,
-                  name="Nuc_ER_ER", width=1024, height=1024) -> str:
+                  name="Nuc_ER_ER", width=1024, height=1024, stage=None) -> str:
     desc = (f"Exposure: {exposure_ms} ms&#13;&#10;Binning: 1 x 1&#13;&#10;"
             f"Region: {width} x {height}, offset at (0, 0)&#13;&#10;"
             "Acquired from Photometrics&#13;&#10;Subtract: Off&#13;&#10;Shading: Off")
+    stage_xml = "" if stage is None else (
+        f'\n<prop id="stage-position-x" type="float" value="{stage[0]}"/>'
+        f'\n<prop id="stage-position-y" type="float" value="{stage[1]}"/>')
     return f"""<MetaData>
 <prop id="Description" type="string" value="{desc}"/>
 <prop id="MetaDataVersion" type="float" value="1"/>
@@ -47,7 +50,7 @@ def metamorph_xml(*, illum="5 TxRed", wavelength=630, px=0.325, exposure_ms=500,
 <prop id="image-name" type="string" value="{name}"/>
 <prop id="acquisition-time-local" type="time" value="{acq}"/>
 <prop id="modification-time-local" type="time" value="{acq}"/>
-<prop id="z-position" type="float" value="{z_pos}"/>
+<prop id="z-position" type="float" value="{z_pos}"/>{stage_xml}
 <prop id="wavelength" type="float" value="{wavelength}"/>
 <prop id="_IllumSetting_" type="string" value="{illum}"/>
 <prop id="_MagNA_" type="float" value="1.3"/>

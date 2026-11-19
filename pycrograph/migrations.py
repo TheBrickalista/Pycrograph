@@ -18,6 +18,9 @@ Version history
 1 -> 2  ``Figure.page`` was a ``PagePreset``; it becomes a ``PageSetup``
         wrapping that preset, with the page size taken from the preset
         (width = preset width, height = preset maximum height).
+2 -> 3  ``InsetStyle`` gains ``region_group`` (None: not replicated) and
+        ``region_link`` ("region"); written explicitly into every existing
+        inset style so the migrated file is self-describing.
 """
 
 from __future__ import annotations
@@ -45,8 +48,19 @@ def _v1_to_v2(data: dict[str, Any]) -> dict[str, Any]:
     return data
 
 
+def _v2_to_v3(data: dict[str, Any]) -> dict[str, Any]:
+    for fig in data.get("figures") or []:
+        for panel in fig.get("panels") or []:
+            style = panel.get("inset_style")
+            if isinstance(style, dict):
+                style.setdefault("region_group", None)
+                style.setdefault("region_link", "region")
+    return data
+
+
 MIGRATIONS: dict[int, Callable[[dict[str, Any]], dict[str, Any]]] = {
     1: _v1_to_v2,
+    2: _v2_to_v3,
 }
 
 

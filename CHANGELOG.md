@@ -7,6 +7,29 @@ All notable changes to Pycrograph are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- Docs: how-to page **Insets, step by step** (`docs/guide/insets.md`). It
+  covers creating insets (on one panel or several), replicating them (table
+  columns, Same region vs Same size, the registration warning, Keep linked),
+  three worked cases (split channels, MetaMorph files per wavelength, other
+  cells or objectives), working with a linked group, and troubleshooting.
+  It is linked from the Figures guide and from *Locks and insets*.
+- `scripts/make_inset_screenshots.py`: regenerates the guide's screenshots
+  (`docs/_static/img/insets-*.png`) offscreen from synthetic images, with a
+  smoke test so it keeps working when the UI changes.
+- Figures tab: **Add Images…** picker (`ui/add_images_dialog.py`) replaces
+  the old drop-down. It shows the Library's tree (thumbnails, status, counts)
+  with search, a minimum-rating filter and a preview pane. It supports
+  multi-selection, and selecting a dataset means all its visible images.
+  Panels are added in tree order, once each, in one gesture. Double-click adds
+  one image and closes. Missing images are greyed and can't be selected.
+  **Import from disk…** goes through the main window's import flow and
+  pre-selects the new images. Size, collapsed datasets and the last dataset
+  are remembered for the session. The action is enabled in projects with no
+  images.
+- `ui/image_tree.py`: one tree-filling helper shared by the Library tab and the
+  picker, so the two can't drift apart. Library behaviour is unchanged.
+- Dev dependency `pytest-qt` (≥ 4.5.0, `qt_api = "pyside6"`); UI tests for the
+  picker.
 - Release pipeline mirroring PysternBlot (shared-core, same pinned actions and
   hardening): `publish.yml` (tests → sdist / wheel with hash-pinned build
   constraints + `twine check` → signed macOS and Windows apps → PyPI trusted
@@ -28,8 +51,65 @@ All notable changes to Pycrograph are documented here. The format follows
   `pull_request_target`, release gating, signing secrets, entitlements),
   version file with pre-releases, selfcheck.
 
+- Replicated insets: *Replicate to…* (Insets & Shapes tab) puts the selected
+  inset on the other selected panels or on every panel of its parent's split /
+  lock group; *Create inset* with several panels selected offers the same.
+  Per target, the geometry is checked (same image, same geometry, different;
+  MetaMorph stage positions equal / differ / unknown): *Same region* (same
+  raw rectangle, compatible geometry only, warns that it assumes registered
+  images) or *Same size* (same µm size, same relative centre, clamped).
+  *Keep linked* puts the insets in a region group: editing one's region
+  updates the others in the same undo step, one log entry per inset. Group
+  shown in the inspector, *Unlink from group*; delete / detach / copy-paste
+  keep groups consistent.
+
+### Fixed
+- Replicate-inset dialog: no longer errors when it opens with several target
+  sets. A radio button's `toggled` signal fired before the table existed.
+- Linked inset groups could diverge silently: resizing a member on the canvas
+  or with `set_geometry`, the layout tools (same width / height, align
+  magnification) and rotating or flipping a member left the others behind,
+  and a rotation pushed its raw rectangle into siblings of the old
+  orientation. A linked group is now one inset repeated (shared page size,
+  rotation, flips and region; positions per member), enforced at every
+  gesture commit and live tick whatever the path, in the same undo step;
+  the first member acted on wins. Replicated copies take the source's size
+  and orientation. The consistency check's group warning now covers every
+  divergence (`insets.group_invariant_issues`).
+
 ### Changed
+- **Replicate inset dialog is now a checklist.** It lists every panel of the
+  figure that can receive the inset (the parent's split / lock group first,
+  then figure order). The selected panels are pre-checked, otherwise the
+  group, otherwise none. **All / None / Same image / Same geometry** quick
+  checks are added, and the button reads **Replicate to N panels** (disabled
+  at 0). `replicate_prompt(src, sets)` is unchanged, and `sets` gains
+  "Eligible panels".
+- **Replicate to…** is enabled whenever exactly one inset is selected, or a
+  parent with exactly one inset. When it is greyed out, its tooltip says why
+  (*Select an inset first*, *Select only one inset to replicate*, *This panel
+  has N insets…*, *No other panel in the figure to replicate to*).
+- **Default mode:** Same region only if every checked target is the same
+  image, or the same geometry at the same stage position; otherwise Same
+  size. It is recomputed when the checks change, until the user clicks a
+  mode. The warning text is unchanged.
+- **Placement:** when the source inset sits below its parent, or the parents
+  form a row (split channels, a lock group in a row), each copy goes directly
+  below its own parent, with the same vertical gap and left alignment.
+  Otherwise the offset-then-free-place rule still applies. *Create inset* on
+  a parent that is part of a row places the inset below it when there is room.
+- Inspector group line: *Linked group: N insets, same region* (or *same size*
+  / *mixed*). The internal group id is no longer shown.
+- Status bar after *Create inset*: "Inset created — use Replicate to… to
+  repeat it on other panels".
+- `scripts/make_inset_screenshots.py` forces `QLocale(English, UnitedStates)`
+  so screenshots show "2.0 mm". The screenshots and *Insets, step by step*
+  are updated to the checklist flow and the new default rule.
 - `twine` added to the `dev` extra (`uv.lock` updated).
+- Project format version 3: `InsetStyle.region_group` / `region_link`
+  (older projects are migrated on load, logged as `project.migrate`).
+- Create inset can be started with several panels selected (drawn on the
+  panel pressed).
 
 ## [0.2.0] - 2026-11-19
 

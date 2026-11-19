@@ -139,6 +139,10 @@ class MainWindow(QMainWindow):
                                       save_prefs=self.save_prefs, workspace=self.ws)
         self.figures_tab.status_message.connect(lambda m: self.statusBar().showMessage(m, 4000))
         self.figures_tab.image_defaults_changed.connect(self._on_image_defaults_changed)
+        # The Add Images picker shows the Library's thumbnails / statuses and
+        # imports through the one import flow below.
+        self.figures_tab.library_state = lambda: (dict(self.library._thumbs), dict(self._status))
+        self.figures_tab.import_handler = lambda dataset_id: self.import_images(dataset_id or None)
         self.tabs.addTab(self.figures_tab, "Figures")
 
         self.preferences_tab = PreferencesTab(self.prefs, save=self.save_prefs)

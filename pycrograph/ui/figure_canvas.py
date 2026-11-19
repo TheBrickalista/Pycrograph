@@ -514,11 +514,14 @@ class FigureCanvas(QGraphicsView):
     def drawing(self) -> bool:
         return self._draw is not None
 
-    def start_draw(self, panel_id: str, mode: str, callback: Callable) -> None:
-        """Next left-drag over `panel_id` draws a rect / line; callback gets
+    def start_draw(self, panel_id, mode: str, callback: Callable) -> None:
+        """Next left-drag over `panel_id` (or over any of several ids: the
+        panel pressed is the one drawn on) draws a rect / line; callback gets
         (panel_id, p0, p1) in panel-local mm, clamped to the panel."""
         self.cancel_draw()
-        self._draw = (panel_id, mode, callback)
+        ids = (panel_id,) if isinstance(panel_id, str) else tuple(panel_id)
+        self._draw = (ids, mode, callback)
+        self._draw_pid: Optional[str] = None
         self.viewport().setCursor(Qt.CrossCursor)
         self.setFocus()
 
@@ -529,7 +532,7 @@ class FigureCanvas(QGraphicsView):
         self.viewport().unsetCursor()
 
     def _draw_local(self, event) -> Optional[QPointF]:
-        item = self.item_for(self._draw[0])
+        item = self.item_for(self._draw_pid) if self._draw_pid else None
         if item is None:
             return None
         p = item.mapFromScene(self.mapToScene(event.position().toPoint()))
@@ -537,13 +540,17 @@ class FigureCanvas(QGraphicsView):
         return QPointF(min(max(p.x(), r.left()), r.right()), min(max(p.y(), r.top()), r.bottom()))
 
     def _draw_press(self, event) -> None:
-        item = self.item_for(self._draw[0])
-        if item is None:
+        items = [it for it in (self.item_for(i) for i in self._draw[0]) if it is not None]
+        if not items:
             self.cancel_draw()
             return
-        local = item.mapFromScene(self.mapToScene(event.position().toPoint()))
-        if not item.rect().contains(local):
-            return                                  # must start on the panel
+        scene_pt = self.mapToScene(event.position().toPoint())
+        item = next((it for it in sorted(items, key=lambda it: -it.zValue())
+                     if it.rect().contains(it.mapFromScene(scene_pt))), None)
+        if item is None:
+            return                                  # must start on one of the panels
+        local = item.mapFromScene(scene_pt)
+        self._draw_pid = item.panel_id
         self._draw_start = local
         pen = QPen(GUIDE_COLOR, 1, Qt.DashLine)
         pen.setCosmetic(True)
@@ -563,7 +570,7 @@ class FigureCanvas(QGraphicsView):
 
     def _draw_release(self, event) -> None:
         p = self._draw_local(event)
-        start, pid, cb = self._draw_start, self._draw[0], self._draw[2]
+        start, pid, cb = self._draw_start, self._draw_pid, self._draw[2]
         self.cancel_draw()
         if p is not None and start is not None and (p - start).manhattanLength() > 0.2:
             cb(pid, (start.x(), start.y()), (p.x(), p.y()))

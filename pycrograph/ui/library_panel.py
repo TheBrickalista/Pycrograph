@@ -13,7 +13,6 @@ key–value pairs). Emits intents; the main window changes the model.
 
 from __future__ import annotations
 
-import html
 from typing import Optional
 
 from PySide6.QtCore import QSize, Qt, Signal
@@ -27,14 +26,7 @@ from PySide6.QtWidgets import (
 from ..models import ImageRef, Project
 from ..storage import search_images
 
-ROLE = Qt.UserRole
-STATUS_TEXT = {
-    "ok": "",
-    "pending_hash": "  ⏳ hashing",
-    "missing": "  ⚠ missing",
-    "changed": "  ⏳ verifying",
-    "modified": "  ⚠ MODIFIED",
-}
+from .image_tree import ROLE, STATUS_TEXT, metadata_html, populate_image_tree
 
 
 class LibraryPanel(QWidget):
@@ -150,41 +142,11 @@ class LibraryPanel(QWidget):
     def refresh(self) -> None:
         keep_img = self.selected_image_id()
         keep_ds = self.selected_dataset_id()
-        self.tree.blockSignals(True)
-        self.tree.clear()
         p = self._project
-        if p is not None:
-            visible = {r.id for r in search_images(p, self.search.text(),
-                                                   self.min_rating.currentIndex())}
-            filtering = bool(self.search.text().strip()) or self.min_rating.currentIndex() > 0
-            root = QTreeWidgetItem([p.project.name])
-            root.setData(0, ROLE, ("project", p.project.id, ""))
-            f = root.font(0)
-            f.setBold(True)
-            root.setFont(0, f)
-            self.tree.addTopLevelItem(root)
-            for ds in p.datasets:
-                if ds.hidden:
-                    continue
-                n = len(ds.image_ids)
-                ds_item = QTreeWidgetItem([f"{ds.name}  ({n})"])
-                ds_item.setData(0, ROLE, ("dataset", ds.id, ""))
-                root.addChild(ds_item)
-                for iid in ds.image_ids:
-                    ref = p.images.get(iid)
-                    if ref is None or iid not in visible:
-                        continue
-                    it = QTreeWidgetItem([ref.filename + STATUS_TEXT.get(self._status.get(iid, ""), "")])
-                    it.setData(0, ROLE, ("image", iid, ds.id))
-                    it.setToolTip(0, ref.path)
-                    if iid in self._thumbs:
-                        it.setIcon(0, self._thumbs[iid])
-                    ds_item.addChild(it)
-                ds_item.setExpanded(True)
-                if filtering and ds_item.childCount() == 0:
-                    ds_item.setHidden(True)
-            root.setExpanded(True)
-        self.tree.blockSignals(False)
+        visible = ({r.id for r in search_images(p, self.search.text(), self.min_rating.currentIndex())}
+                   if p is not None else set())
+        filtering = bool(self.search.text().strip()) or self.min_rating.currentIndex() > 0
+        populate_image_tree(self.tree, p, visible, self._thumbs, self._status, filtering)
         target = None
         if keep_img:
             target = next(iter(self._items_for(keep_img, dataset_id=keep_ds)), None) or \
@@ -279,44 +241,7 @@ class LibraryPanel(QWidget):
 
     # ------------------------------------------------------------ metadata
     def _show_metadata(self, ref: Optional[ImageRef]) -> None:
-        if ref is None:
-            self.meta.setHtml("<i>Select an image.</i>")
-            return
-        m = ref.metadata
-        cal = m.calibration
-        rows = [
-            ("File", html.escape(ref.filename)),
-            ("Path", f"<small>{html.escape(ref.path)}</small>"),
-            ("Status", html.escape(self._status.get(ref.id, "ok") or "ok")),
-            ("SHA-256", f"<small>{ref.sha256 or 'computing…'}</small>"),
-            ("Size", f"{ref.size_bytes / 2**20:.1f} MB"),
-            ("Reader", html.escape(f"{ref.reader} ({ref.reader_version})")),
-            ("Dimensions", f"T {m.shape.T} · Z {m.shape.Z} · C {m.shape.C} · {m.shape.X}×{m.shape.Y} px"),
-            ("Pixel type", f"{m.dtype} ({m.bit_depth}-bit)"),
-            ("Pixel size", (f"{cal.pixel_size_x:g} × {cal.pixel_size_y:g} {cal.unit}/px"
-                            f" <small>({cal.source})</small>") if cal.is_calibrated else
-             "<span style='color:#b45309'>not calibrated</span>"),
-        ]
-        if cal.z_step:
-            rows.append(("Z step", f"{cal.z_step:g} {cal.unit}"))
-        if m.objective or m.numerical_aperture:
-            rows.append(("Objective", html.escape(f"{m.objective or ''} NA {m.numerical_aperture or '?'}")))
-        if m.acquisition_time:
-            rows.append(("Acquired", html.escape(m.acquisition_time)))
-        if m.time_offsets_s and len(m.time_offsets_s) > 1:
-            rows.append(("Time span", f"{m.time_offsets_s[-1]:g} s"))
-        for ch in m.channels:
-            bits = [ch.name or f"Channel {ch.index + 1}"]
-            if ch.wavelength_nm:
-                bits.append(f"{ch.wavelength_nm:g} nm")
-            if ch.exposure_ms:
-                bits.append(f"{ch.exposure_ms:g} ms")
-            rows.append((f"Ch {ch.index + 1}", html.escape(" · ".join(bits))))
-        for w in ref.warnings:
-            rows.append(("⚠", f"<span style='color:#b45309'>{html.escape(w)}</span>"))
-        body = "".join(f"<tr><td style='color:#6b7280;padding-right:8px'>{k}</td><td>{v}</td></tr>"
-                       for k, v in rows)
-        self.meta.setHtml(f"<table style='font-size:11px'>{body}</table>")
+        self.meta.setHtml(metadata_html(ref, self._status.get(ref.id, "ok") if ref else "ok"))
 
     # --------------------------------------------------------- annotations
     def _set_annotation_enabled(self, on: bool) -> None:

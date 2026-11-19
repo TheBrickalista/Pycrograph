@@ -93,7 +93,8 @@ def test_create_inset_by_drawing_and_edit_its_rect(app, setup):
     c = inset.crop                                           # 64 px / 40 mm = 1.6 px/mm
     assert (c.x, c.y, c.w, c.h) == pytest.approx((16, 16, 16, 12), abs=0.5)
     assert V.px_per_mm(inset, s.X, s.Y) == pytest.approx(V.px_per_mm(pa, s.X, s.Y) / 2)
-    assert inset.x_mm >= pa.x_mm + pa.width_mm
+    assert I.in_row(f, pa)                                   # pa, pb side by side
+    assert (inset.x_mm, inset.y_mm) == (pa.x_mm, pa.y_mm + pa.height_mm + 2)   # below it
 
     # Parent shows the numbered rectangle, inset its matching border + number.
     [rect] = kids(view.item_for(pa.id), KIND_INSET_RECT)
