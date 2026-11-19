@@ -160,7 +160,10 @@ class PanelItem(QGraphicsRectItem):
         if self._pixmap is not None and not self._pixmap.isNull():
             painter.save()
             painter.setClipRect(r)
-            painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
+            # Canvas: smooth. Export: nearest-neighbour unless asked otherwise
+            # (vector exports embed the native raster; the viewer scales it).
+            painter.setRenderHint(QPainter.SmoothPixmapTransform,
+                                  bool(getattr(self.scene(), "smooth_images", True)))
             target = self.image_rect if self._image_rect is not None else r
             painter.drawPixmap(target, self._pixmap, QRectF(self._pixmap.rect()))
             painter.restore()
@@ -275,6 +278,7 @@ class FigureScene(QGraphicsScene):
         self.on_commit: Optional[CommitCallback] = None
         self._committing = False
         self.decorations = True
+        self.smooth_images = True                 # pixmap scaling: canvas smooth, export chosen
         # (PanelItem, Panel) -> builds labels / scale bar / border (set by the tab)
         self.overlay_builder: Optional[Callable[[PanelItem, Panel], None]] = None
         # Overlay interaction (ui/panel_overlays.py), set by the tab:
@@ -289,6 +293,44 @@ class FigureScene(QGraphicsScene):
 
     def panel_items(self) -> list[PanelItem]:
         return [it for it in self.items() if isinstance(it, PanelItem)]
+
+    def page_rect(self, page: int) -> QRectF:
+        w, h = self.figure.page.size_mm
+        return QRectF(0, page_offset_mm(self.figure, page), w, h)
+
+    def populate(self, figure: Optional[Figure], provider: Optional[PixmapProvider] = None,
+                 selected: Optional[set[str]] = None) -> None:
+        """Build pages, panels and their overlays. THE scene builder: the
+        canvas and the export (ui/scene_builder.py) both use it."""
+        self.blockSignals(True)
+        self.clear()
+        self.page_items = []
+        self.guides = (None, None)
+        self.figure = figure
+        if figure is not None:
+            w, h = figure.page.size_mm
+            bg = QColor(figure.page.background)
+            for i in range(figure.page.n_pages):
+                page = QGraphicsRectItem(0, page_offset_mm(figure, i), w, h)
+                page.setBrush(QBrush(bg))
+                page.setPen(QPen(QColor("#6b7280"), 0))
+                page.setZValue(-10)
+                page.setData(0, f"page:{i}")
+                self.addItem(page)
+                self.page_items.append(page)
+            for z, panel in enumerate(figure.panels):
+                item = PanelItem(panel, figure, provider(panel) if provider else (None, "", None))
+                item.setZValue(z)
+                self.addItem(item)
+                item.build_overlays(panel)
+                if selected and panel.id in selected:
+                    item.setSelected(True)
+            self.add_guides()
+            self.set_decorations(self.decorations)
+            margin = PAGE_GAP_MM
+            total_h = page_offset_mm(figure, figure.page.n_pages - 1) + h
+            self.setSceneRect(-margin, -margin, w + 2 * margin, total_h + 2 * margin)
+        self.blockSignals(False)
 
     def set_decorations(self, on: bool) -> None:
         """Editor decorations (outlines, selection, handles, guides, page
@@ -403,37 +445,7 @@ class FigureCanvas(QGraphicsView):
     # ---- content ---------------------------------------------------------
     def set_figure(self, figure: Optional[Figure], provider: Optional[PixmapProvider] = None,
                    selected: Optional[set[str]] = None) -> None:
-        sc = self._scene
-        sc.blockSignals(True)
-        sc.clear()
-        sc.page_items = []
-        sc.guides = (None, None)
-        sc.figure = figure
-        if figure is not None:
-            w, h = figure.page.size_mm
-            bg = QColor(figure.page.background)
-            for i in range(figure.page.n_pages):
-                page = QGraphicsRectItem(0, page_offset_mm(figure, i), w, h)
-                page.setBrush(QBrush(bg))
-                pen = QPen(QColor("#6b7280"), 0)
-                page.setPen(pen)
-                page.setZValue(-10)
-                page.setData(0, f"page:{i}")
-                sc.addItem(page)
-                sc.page_items.append(page)
-            for z, panel in enumerate(figure.panels):
-                item = PanelItem(panel, figure, provider(panel) if provider else (None, "", None))
-                item.setZValue(z)
-                sc.addItem(item)
-                item.build_overlays(panel)
-                if selected and panel.id in selected:
-                    item.setSelected(True)
-            sc.add_guides()
-            sc.set_decorations(sc.decorations)
-            margin = PAGE_GAP_MM
-            total_h = page_offset_mm(figure, figure.page.n_pages - 1) + h
-            sc.setSceneRect(-margin, -margin, w + 2 * margin, total_h + 2 * margin)
-        sc.blockSignals(False)
+        self._scene.populate(figure, provider, selected)
         self._emit_selection()
         if self._fit_mode:
             self.fit_pages()

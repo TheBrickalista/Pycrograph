@@ -285,6 +285,16 @@ Bump `PROJECT_FORMAT_VERSION` to 2 with a migration (`Figure.page` → `PageSetu
    rendering are reported (`figures.channel_mismatches`, reused by the step-6 check).
 6. **Export** (SVG/PDF/TIFF + sidecar JSON + info page) and **consistency check**, then
    archives.
+   *Done (archives still to come).* One scene builder (`FigureScene.populate`) for canvas
+   and export; the export scene has decorations off and native-resolution rasters. PDF
+   rasters are written lossless through `QPainter.LosslessImageRendering` (Qt otherwise
+   JPEG-encodes them; the test parses the PDF). Raster exports resample nearest-neighbour by
+   default, "smooth" = Qt bilinear. Source data = raw cropped planes in raw orientation,
+   native dtype, uncompressed OME-TIFF. Sidecar `<file>.provenance.json` (per format); it
+   does not hold the exported files' hashes (they embed its hash); the log entry has both.
+   Missing / modified sources refuse the export unless explicitly allowed (logged). The
+   consistency check adds three rules beyond §2.9: content past the page edge (outside labels
+   estimated from the font size), scale bar longer than its panel, unresolved label tokens.
 
 ## 7. Open decisions
 

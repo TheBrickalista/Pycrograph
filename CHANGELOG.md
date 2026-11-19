@@ -6,7 +6,36 @@ All notable changes to Pycrograph are documented here. The format follows
 
 ## [Unreleased]
 
-Figure editor, steps 1 to 5 (docs/design/figure-editor.md §6).
+Figure editor, steps 1 to 6 (docs/design/figure-editor.md §6).
+
+### Added (step 6: consistency check, export, provenance)
+- Consistency check (toolbar, and automatically before export): per row,
+  column and lock group — same channel shown with different levels / LUT /
+  gamma / invert, different T / Z / projection in a row (montages exempt),
+  scale bar on some panels of a row only, channel name / wavelength
+  mismatches; per panel — non-linear gamma, effective resolution below the
+  preset dpi, lines thinner than the preset minimum, saturated pixels in the
+  crop, content past the page edge, scale bar longer than the panel,
+  unresolved label tokens; per source — missing / modified / changed / hash
+  not recorded. Clicking a warning selects its panels; "Export anyway" is
+  logged with the warnings.
+- Export to PDF and SVG (text as text, vector lines and shapes, panel rasters
+  at native crop resolution; PDF images lossless, fonts embedded, multipage,
+  optional provenance info page) and TIFF / PNG (chosen dpi, RGB 8-bit,
+  nearest-neighbour or smooth resampling, one file per page).
+- Source-data export: raw cropped planes (visible channels or the max
+  projection) as uncompressed OME-TIFF with calibration.
+- Provenance sidecar `<file>.provenance.json` for every export; its SHA-256
+  embedded in the files (SVG metadata, PDF info + XMP, TIFF description, PNG
+  text); sources re-verified by SHA-256 before export (missing / modified
+  refused unless allowed); one log entry per export with the SHA-256 of every
+  written file and of the sidecar.
+- Integrity report: HTML version (PysternBlot style) next to the JSON, and an
+  exports section re-checking every exported file.
+
+### Changed (step 6)
+- Canvas and export share one scene builder (`FigureScene.populate`,
+  `ui/scene_builder.py`).
 
 ### Added (step 5: insets and shapes)
 - Insets & Shapes inspector tab.

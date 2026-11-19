@@ -26,7 +26,7 @@ import html
 from typing import Callable, Iterable, Optional
 
 from PySide6.QtCore import Qt, QTimer, Signal
-from PySide6.QtGui import QAction, QImage, QKeySequence, QPixmap
+from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import (
     QComboBox, QDialog, QDoubleSpinBox, QHBoxLayout, QInputDialog, QLabel, QMenu, QMessageBox,
     QSplitter, QTabWidget, QTextBrowser, QToolButton, QVBoxLayout, QWidget,
@@ -37,16 +37,18 @@ from .. import insets as I
 from .. import layout as L
 from .. import viewport as V
 from ..figures import FigureEditor, create_figure, next_figure_name, rename_figure
-from ..labels import group_time_unit
 from ..models import Figure, ImageRef, Panel, PanelLabel, Project, Shape
-from ..render import PanelRenderer, RenderError, crop_bounds
+from ..render import PanelRenderer
+from .. import consistency as C
+from .. import export as X
 from ..preferences import Preferences
+from ..storage import Workspace, check_image
 from .figure_canvas import FigureCanvas, PanelItem, PanelVisual
 from .insets_inspector import InsetsInspector
 from .labels_inspector import LabelsInspector
 from .page_setup import PageSetupDialog
 from .panel_inspector import PreviewInspector
-from .panel_overlays import build_overlays
+from .scene_builder import overlay_builder, panel_visual
 
 CANVAS_MAX_SIDE = 1024      # on-screen decimation (integer stride, no interpolation)
 IDLE_COMMIT_MS = 700        # same as the library / PysternBlot gesture commit
@@ -59,9 +61,11 @@ class FiguresTab(QWidget):
     def __init__(self, renderer: PanelRenderer, save: Callable[[], None],
                  before_gesture: Optional[Callable[[], None]] = None,
                  prefs: Optional[Preferences] = None,
-                 save_prefs: Optional[Callable[[], None]] = None, parent=None):
+                 save_prefs: Optional[Callable[[], None]] = None,
+                 workspace: Optional[Workspace] = None, parent=None):
         super().__init__(parent)
         self.renderer = renderer
+        self.workspace = workspace
         self.prefs = prefs or Preferences()
         self._save_prefs = save_prefs or (lambda: None)
         self._save = save
@@ -131,6 +135,17 @@ class FiguresTab(QWidget):
         self.a_zoom_in = action("+", lambda: self.canvas.zoom_by(1.25), QKeySequence.ZoomIn)
         self.a_zoom_out = action("−", lambda: self.canvas.zoom_by(0.8), QKeySequence.ZoomOut)
         for a in (self.a_fit, self.a_zoom_in, self.a_zoom_out):
+            button(a)
+        bar.addSpacing(12)
+        self.a_check = action("Check consistency", lambda: self.check_consistency(show=True),
+                              tip="Levels, T/Z, scale bars, channels, sources, resolution, line "
+                                  "widths, saturation — per row, column and lock group")
+        self.a_export = action("Export…", self.export_figure_dialog,
+                               tip="PDF / SVG / TIFF / PNG with a provenance file")
+        self.a_export_sources = action("Export source data…", self.export_sources_dialog,
+                                       tip="Raw cropped planes of the selected (or all) panels as "
+                                           "OME-TIFF")
+        for a in (self.a_check, self.a_export, self.a_export_sources):
             button(a)
         bar.addStretch(1)
         self.page_label = QLabel("")
@@ -263,6 +278,8 @@ class FiguresTab(QWidget):
         self.a_add.setEnabled(has_project and bool(self.project.images))
         self.a_delete.setEnabled(sel)
         self.a_select_all.setEnabled(fig is not None)
+        for a in (self.a_check, self.a_export, self.a_export_sources):
+            a.setEnabled(bool(fig and fig.panels and self.workspace is not None))
         can_undo = bool(ed and (ed.history.can_undo or ed.has_pending))
         self.a_undo.setEnabled(can_undo)
         self.a_redo.setEnabled(bool(ed and ed.history.can_redo))
@@ -737,15 +754,10 @@ class FiguresTab(QWidget):
         self._last_missing = missing
 
     def _build_overlays(self, item: PanelItem, panel: Panel) -> None:
-        fig = self.current_figure()
-        if fig is None:
+        if self.project is None:
             return
-        unit = None
-        if panel.lock_group:              # one [time] unit per lock group / montage
-            members = F.lock_members(fig, panel.lock_group)
-            unit = group_time_unit(members, self.project.images)
-        build_overlays(item, panel, self.ref(panel), self.project, fig, time_unit=unit,
-                       selected_shapes=frozenset(self.selected_shapes.get(panel.id, ())))
+        overlay_builder(self.project, self.current_figure,
+                        lambda pid: frozenset(self.selected_shapes.get(pid, ())))(item, panel)
 
     def _related_ids(self, ids: list[str], wide: bool = True) -> list[str]:
         """Panels whose drawing depends on `ids`: their parents (inset
@@ -979,6 +991,100 @@ class FiguresTab(QWidget):
         self.insets_inspector.refresh()
         return out
 
+    # ========================================================= check / export
+    def check_consistency(self, show: bool = False, saturation: bool = True) -> list[C.Issue]:
+        """Run the §2.9 check on the current figure (sources checked by
+        size/date; saturation on each panel's crop)."""
+        fig = self.current_figure()
+        if fig is None or self.project is None:
+            return []
+        self.flush()
+        ws, project = self.workspace, self.project
+
+        def status(ref) -> str:
+            return check_image(ws, project, ref).value if ws is not None else (
+                "pending_hash" if ref.sha256 is None else "ok")
+        issues = C.check_figure(project, fig, source_status=status,
+                                crop_plane=(lambda p, r, c: self.renderer.crop_plane(r, p, c))
+                                if saturation else None)
+        self.status_message.emit(f"Consistency: {C.summary(issues)}")
+        if show:
+            from .export_dialogs import ConsistencyDialog
+            ConsistencyDialog(issues, self.canvas.select_ids, "check", self).exec()
+        return issues
+
+    def export_figure(self, path, settings: "X.ExportSettings",
+                      confirm: Optional[Callable[[list[C.Issue]], bool]] = None
+                      ) -> Optional["X.ExportResult"]:
+        """Consistency check first: if it finds anything, `confirm(issues)`
+        (default: the dialog's "Export anyway") decides; the warnings are then
+        logged with the export. Missing / modified sources refuse."""
+        fig = self.current_figure()
+        if fig is None or self.workspace is None:
+            return None
+        issues = self.check_consistency()
+        if issues:
+            if confirm is None:
+                from .export_dialogs import ConsistencyDialog
+                dlg = ConsistencyDialog(issues, self.canvas.select_ids, "export", self)
+                ok = dlg.exec() == QDialog.Accepted
+            else:
+                ok = confirm(issues)
+            if not ok:
+                self.status_message.emit("Export cancelled")
+                return None
+        self._before_gesture()
+        try:
+            result = X.export_figure(self.workspace, self.project, fig, self.renderer, path, settings,
+                                     overridden=[i.to_dict() for i in issues] or None)
+        except X.ExportRefused as exc:
+            QMessageBox.warning(self, "Export refused", str(exc))
+            self.status_message.emit(f"Export refused: {exc}")
+            return None
+        self._save()
+        self.status_message.emit(f"Exported {len(result.files)} file(s) + {result.sidecar.name}"
+                                 + (f" — {'; '.join(result.warnings)}" if result.warnings else ""))
+        return result
+
+    def export_figure_dialog(self) -> None:
+        fig = self.current_figure()
+        if fig is None:
+            return
+        from PySide6.QtWidgets import QFileDialog
+        from .export_dialogs import ExportDialog
+        dlg = ExportDialog(fig.page.preset.dpi, fig.page.n_pages, self)
+        if dlg.exec() != QDialog.Accepted:
+            return
+        settings = dlg.settings()
+        path, _ = QFileDialog.getSaveFileName(self, "Export figure", f"{fig.name}.{settings.format}",
+                                              f"{settings.format.upper()} (*.{settings.format})")
+        if path:
+            self.export_figure(path, settings)
+
+    def export_sources(self, directory, panel_ids: Optional[list[str]] = None
+                       ) -> Optional["X.ExportResult"]:
+        """Selected panels (all when none is selected) as OME-TIFF."""
+        fig = self.current_figure()
+        if fig is None or self.workspace is None:
+            return None
+        ids = panel_ids or [p.id for p in self.selected_panels()] or [p.id for p in fig.panels]
+        self._before_gesture()
+        try:
+            result = X.export_sources(self.workspace, self.project, fig, self.renderer, ids, directory)
+        except X.ExportRefused as exc:
+            QMessageBox.warning(self, "Export refused", str(exc))
+            return None
+        self._save()
+        self.status_message.emit(f"Source data: {len(result.files)} OME-TIFF file(s) + "
+                                 f"{result.sidecar.name}")
+        return result
+
+    def export_sources_dialog(self) -> None:
+        from PySide6.QtWidgets import QFileDialog
+        d = QFileDialog.getExistingDirectory(self, "Export source data to")
+        if d:
+            self.export_sources(d)
+
     # ======================================================== panel clipboard
     def copy_panels(self) -> int:
         sel = self.selected_panels()
@@ -1136,18 +1242,9 @@ class FiguresTab(QWidget):
 
     # ============================================================ drawing
     def _visual(self, panel: Panel) -> PanelVisual:
-        ref = self.ref(panel)
-        if ref is None:
-            return None, "image not in project", None
-        try:
-            rgb = self.renderer.render(ref, panel, max_side=CANVAS_MAX_SIDE)
-        except RenderError as exc:
-            return None, f"{ref.filename}\n{exc}", None
-        h, w = rgb.shape[:2]
-        img = QImage(rgb.data, w, h, 3 * w, QImage.Format_RGB888).copy()
-        s = ref.metadata.shape
-        rect = V.image_rect_mm(panel, s.X, s.Y, crop_bounds(panel.crop, s.X, s.Y))
-        return QPixmap.fromImage(img), "", rect
+        if self.project is None:
+            return None, "no project", None
+        return panel_visual(self.project, self.renderer, panel, CANVAS_MAX_SIDE)
 
     def refresh(self, selected: Optional[set[str]] = None) -> None:
         fig = self.current_figure()

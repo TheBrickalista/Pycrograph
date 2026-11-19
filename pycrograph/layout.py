@@ -115,6 +115,19 @@ def rows_of(panels: Sequence[Panel]) -> list[list[Panel]]:
     return [sorted(r, key=lambda p: p.x_mm) for r in rows]
 
 
+def columns_of(panels: Sequence[Panel]) -> list[list[Panel]]:
+    """Group panels into columns from their current positions (a panel joins
+    a column when its left edge is left of the middle of the column's first
+    panel), each column sorted top to bottom. Counterpart of rows_of."""
+    cols: list[list[Panel]] = []
+    for p in sorted(panels, key=lambda p: (p.x_mm, p.y_mm)):
+        if cols and p.x_mm < cols[-1][0].x_mm + cols[-1][0].width_mm / 2:
+            cols[-1].append(p)
+        else:
+            cols.append([p])
+    return [sorted(c, key=lambda p: p.y_mm) for c in cols]
+
+
 def grid(panels: Sequence[Panel], gap_mm: float = DEFAULT_GAP_MM) -> None:
     """Snap to a grid: rows and columns from the current positions, `gap_mm`
     between cells, the top-left panel fixed. Column width / row height =

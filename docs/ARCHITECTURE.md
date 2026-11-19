@@ -23,6 +23,9 @@ hash-chained operation log, and a PySide6 `QGraphicsView` UI.
 | `viewport.py` | Viewport = crop (pure geometry): uniform scale, zoom % (100 % = whole image fitted), pan, resize at constant scale, rotation about the crop centre, orientation mapping, where the image sits in its panel |
 | `layout.py` | Layout tools (pure): align, distribute, grid with gap, nudge, same size, align magnification (µm per page-mm), auto-layouts (split channels, montage, condition grid) with `lock_group` |
 | `preferences.py` | App preferences in `<workspace>/preferences.json`: journal presets (data), default preset, layout gap. Not project data, not logged |
+| `consistency.py` | Pre-export check (§2.9), pure: per row / column / lock group and per panel; `Issue(severity, code, message, panel_ids)` |
+| `export.py` | Figure export (PDF, SVG, TIFF, PNG) from the shared scene, source-data export (OME-TIFF), source verification, metadata embedding, one log entry per export |
+| `provenance.py` | Export sidecar (pure): per panel source + hash, crop as rendered, orientation, channels, flags, resolved labels, scale-bar basis, insets, shapes |
 | `insets.py` | Dynamic insets (pure): create (2× magnification, placement), rectangle on the parent derived from the inset's crop, edit it back, follow-parent sync, links on copy/paste |
 | `labels.py` | Label tokens resolved at render time ([channels], [time…], [z…], [zoom], [image], [dataset], [tags], [kv:Key]); unresolved → "?" + reported |
 | `scalebar.py` | Scale bar length on the page from the calibration and the viewport scale; reason when unavailable; non-isotropic pixels |
@@ -32,10 +35,12 @@ hash-chained operation log, and a PySide6 `QGraphicsView` UI.
 | `storage.py` | `Workspace` (atomic saves), import **by reference**, SHA-256, `check_image`, relink (single + drive-prefix), copy into project, annotations, thumbnails |
 | `logchain.py` | Hash-chained log — **shared-core** (verbatim from PysternBlot) |
 | `jsonsafe.py` | Strict JSON — **shared-core** (verbatim) |
-| `integrity.py` | Integrity report (JSON) — **shared-core** (adapted) |
+| `integrity.py` | Integrity report (JSON + HTML, exports re-checked) — **shared-core** (adapted) |
 | `ui/main_window.py` | Tabs Home · Library · Figures · Preferences · About. Library tab = tree (left) · viewer (centre) · inspector (right); gesture commit |
 | `ui/home_tab.py` | Project list (new / open / archive / restore), figures of the open project |
 | `ui/figures_tab.py`, `ui/figure_canvas.py` | Figure selector, page canvas in mm at journal width, panel items (select, rubber band, move, resize handle), undo/redo, live-gesture commit, Preview · Info inspector |
+| `ui/export_dialogs.py` | Consistency dialog (click selects panels; "Export anyway") and export settings dialog |
+| `ui/scene_builder.py` | Panel visual + overlay builder shared by canvas and export; `export_scene` (decorations off, native rasters) |
 | `ui/insets_inspector.py` | Insets & Shapes tab: create inset, inset style and follow flags, shapes (draw, list, style, delete, copy/paste) |
 | `ui/labels_inspector.py` | Labels tab: labels, scale bar and border of all selected panels |
 | `ui/panel_overlays.py` | Labels, scale bar, border, inset rectangles / borders / numbers and shapes as vector child items of each panel (page mm), tagged by kind for the export; interactive inset rectangles and shapes |
@@ -146,6 +151,20 @@ commit rebuilds the overlays).
 
 Tests: `tests/conftest.py` makes any unexpected modal dialog fail the test
 (offscreen, a dialog would block forever).
+
+## Export and provenance
+
+`ui/scene_builder.export_scene` builds the same scene as the canvas
+(`FigureScene.populate`) with editor decorations off and every panel raster
+at native crop resolution (`PanelRenderer.render(max_side=None)`: only the
+part of the crop on the image, placed with `viewport.image_rect_mm`).
+`export.py` renders a page rect of that scene into `QPdfWriter` (lossless
+image hint, fonts embedded, XMP), `QSvgGenerator` (+ `<metadata>`) or a
+`QImage` at the chosen dpi (TIFF via tifffile with resolution tags, PNG with
+pHYs + text chunks). Order: verify sources → write the sidecar
+(`provenance.py`) and hash it → write the file(s) embedding that hash →
+hash them → one log entry (`export.figure` / `export.sources`). The
+integrity report lists every logged export and re-hashes its files.
 
 ## Format migrations
 
