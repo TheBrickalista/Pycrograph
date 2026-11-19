@@ -8,7 +8,10 @@
 """
 Figures tab: figure selector, page canvas at journal width, panels
 rendered by PanelRenderer (select / move / resize / multi-select / delete;
-snapshot undo/redo) and the inspector (Preview · Info).
+snapshot undo/redo) and the inspector (Preview · Info). A second toolbar
+row holds the layout tools (§2.8): align, distribute, grid with gap, same
+size, align magnification, page setup and the auto-layouts (split
+channels, montage, condition grid). Arrow keys nudge the selection.
 
 All model changes go through figures.FigureEditor: one undo step per
 gesture, one log entry per panel, then save. Continuous controls (sliders,
@@ -25,16 +28,19 @@ from typing import Callable, Iterable, Optional
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QAction, QImage, QKeySequence, QPixmap
 from PySide6.QtWidgets import (
-    QComboBox, QHBoxLayout, QInputDialog, QLabel, QMessageBox, QSplitter, QTabWidget,
-    QTextBrowser, QToolButton, QVBoxLayout, QWidget,
+    QComboBox, QDialog, QDoubleSpinBox, QHBoxLayout, QInputDialog, QLabel, QMenu, QMessageBox,
+    QSplitter, QTabWidget, QTextBrowser, QToolButton, QVBoxLayout, QWidget,
 )
 
 from .. import figures as F
+from .. import layout as L
 from .. import viewport as V
 from ..figures import FigureEditor, create_figure, next_figure_name, rename_figure
 from ..models import Figure, ImageRef, Panel, Project
 from ..render import PanelRenderer, RenderError, crop_bounds
+from ..preferences import Preferences
 from .figure_canvas import FigureCanvas, PanelVisual
+from .page_setup import PageSetupDialog
 from .panel_inspector import PreviewInspector
 
 CANVAS_MAX_SIDE = 1024      # on-screen decimation (integer stride, no interpolation)
@@ -46,9 +52,13 @@ class FiguresTab(QWidget):
     image_defaults_changed = Signal(str)          # image id
 
     def __init__(self, renderer: PanelRenderer, save: Callable[[], None],
-                 before_gesture: Optional[Callable[[], None]] = None, parent=None):
+                 before_gesture: Optional[Callable[[], None]] = None,
+                 prefs: Optional[Preferences] = None,
+                 save_prefs: Optional[Callable[[], None]] = None, parent=None):
         super().__init__(parent)
         self.renderer = renderer
+        self.prefs = prefs or Preferences()
+        self._save_prefs = save_prefs or (lambda: None)
         self._save = save
         self._before_gesture = before_gesture or (lambda: None)
         self.project: Optional[Project] = None
@@ -117,10 +127,12 @@ class FiguresTab(QWidget):
         self.page_label.setStyleSheet("color: #6b7280;")
         bar.addWidget(self.page_label)
         lay.addLayout(bar)
+        lay.addLayout(self._build_layout_bar(action))
 
         split = QSplitter(Qt.Horizontal)
         self.canvas = FigureCanvas()
         self.canvas.set_commit_callback(self._on_geometry_commit)
+        self.canvas.nudge_requested.connect(self.nudge)
         self.canvas.selection_changed.connect(self._on_selection_changed)
         split.addWidget(self.canvas)
         self.inspector_tabs = QTabWidget()
@@ -134,6 +146,77 @@ class FiguresTab(QWidget):
         split.setStretchFactor(1, 0)
         split.setSizes([850, 420])
         lay.addWidget(split, 1)
+
+    def _build_layout_bar(self, action) -> QHBoxLayout:
+        bar = QHBoxLayout()
+        bar.addWidget(QLabel("Layout"))
+        self.layout_actions: dict[str, QAction] = {}
+
+        def menu_button(text: str, items) -> QToolButton:
+            b = QToolButton()
+            b.setText(text)
+            b.setPopupMode(QToolButton.InstantPopup)
+            m = QMenu(b)
+            for key, label, slot in items:
+                if key is None:
+                    m.addSeparator()
+                    continue
+                a = action(label, slot)
+                m.addAction(a)
+                self.layout_actions[key] = a
+            b.setMenu(m)
+            bar.addWidget(b)
+            return b
+
+        menu_button("Align ▾", [
+            ("align_left", "Align left", lambda: self.align("left")),
+            ("align_right", "Align right", lambda: self.align("right")),
+            ("align_top", "Align top", lambda: self.align("top")),
+            ("align_bottom", "Align bottom", lambda: self.align("bottom")),
+            ("align_hcentre", "Align horizontal centres", lambda: self.align("hcentre")),
+            ("align_vcentre", "Align vertical centres", lambda: self.align("vcentre")),
+            (None, "", None),
+            ("distribute_h", "Distribute horizontally", lambda: self.distribute("h")),
+            ("distribute_v", "Distribute vertically", lambda: self.distribute("v")),
+        ])
+        a = action("Grid", self.snap_to_grid,
+                   tip="Rows and columns from the current positions, gap between cells, "
+                       "top-left panel fixed")
+        self.layout_actions["grid"] = a
+        b = QToolButton()
+        b.setDefaultAction(a)
+        bar.addWidget(b)
+        self.gap_spin = QDoubleSpinBox()
+        self.gap_spin.setRange(0.0, 50.0)
+        self.gap_spin.setDecimals(1)
+        self.gap_spin.setSingleStep(0.5)
+        self.gap_spin.setSuffix(" mm gap")
+        self.gap_spin.setValue(self.prefs.layout_gap_mm)
+        self.gap_spin.setToolTip("Gap used by Grid and the auto-layouts")
+        self.gap_spin.valueChanged.connect(self._on_gap_changed)
+        bar.addWidget(self.gap_spin)
+        menu_button("Size ▾", [
+            ("same_width", "Same width", lambda: self.same_size("width")),
+            ("same_height", "Same height", lambda: self.same_size("height")),
+            ("same_both", "Same width && height", lambda: self.same_size("both")),
+        ])
+        for key, text, slot, tip in (
+                ("align_magnification", "Align magnification", self.align_magnification,
+                 "Resize panels so µm per page-mm equals the top-left panel's "
+                 "(equal scale bars look equal); crops unchanged"),
+                ("page_setup", "Page setup…", self.page_setup_dialog, "")):
+            a = action(text, slot, tip=tip)
+            self.layout_actions[key] = a
+            b = QToolButton()
+            b.setDefaultAction(a)
+            bar.addWidget(b)
+        menu_button("Auto ▾", [
+            ("split_channels", "Split channels", self.split_channels),
+            ("montage", "Montage of T or Z…", self.montage_dialog),
+            ("condition_grid", "Condition grid", self.condition_grid),
+        ])
+        bar.addStretch(1)
+        return bar
 
     def _update_enabled(self) -> None:
         has_project = self.project is not None
@@ -151,6 +234,14 @@ class FiguresTab(QWidget):
         self.a_redo.setEnabled(bool(ed and ed.history.can_redo))
         self.a_undo.setText(f"Undo {ed.history.undo_label}" if ed and ed.history.can_undo else "Undo")
         self.a_redo.setText(f"Redo {ed.history.redo_label}" if ed and ed.history.can_redo else "Redo")
+        n = len(self.canvas.selected_ids()) if fig else 0
+        need = {"align_left": 2, "align_right": 2, "align_top": 2, "align_bottom": 2,
+                "align_hcentre": 2, "align_vcentre": 2, "distribute_h": 3, "distribute_v": 3,
+                "grid": 1, "same_width": 2, "same_height": 2, "same_both": 2,
+                "align_magnification": 2, "split_channels": 1, "montage": 1,
+                "condition_grid": 1}
+        for key, a in getattr(self, "layout_actions", {}).items():
+            a.setEnabled(fig is not None and (key == "page_setup" or n >= need.get(key, 1)))
 
     # ============================================================ project
     def set_project(self, project: Optional[Project]) -> None:
@@ -266,7 +357,8 @@ class FiguresTab(QWidget):
                 return None
         self.flush()
         self._before_gesture()
-        fig = create_figure(self.project, name or next_figure_name(self.project))
+        fig = create_figure(self.project, name or next_figure_name(self.project),
+                            page=self.prefs.new_page())
         self._save()
         self._reload_combo(fig.id)
         return fig
@@ -363,6 +455,156 @@ class FiguresTab(QWidget):
         self.inspector.refresh_planes()
         self._update_info()
         self._update_enabled()
+
+    # ============================================================== layout
+    def _layout(self, fn, operation: str, label: str, min_sel: int = 1,
+                select_new: bool = False):
+        """Run one layout gesture on the selection (one undo step, one log
+        entry per panel), then redraw."""
+        ed = self.current_editor()
+        sel = [p.id for p in self.selected_panels()]
+        if ed is None or len(sel) < min_sel:
+            return None
+        self.flush()
+        self._before_gesture()
+        before = {p.id for p in ed.figure.panels}
+        result = ed.layout(sel, fn, operation, label)
+        added = {p.id for p in ed.figure.panels} - before
+        self.refresh(selected=added if select_new and added else set(sel))
+        if added:
+            _w, h = ed.figure.page.size_mm
+            bottom = max(p.y_mm + p.height_mm for p in ed.figure.panels if p.id in added)
+            if bottom > h:
+                self.status_message.emit(f"{label}: {len(added)} panel(s) added; they extend "
+                                         f"below the page ({bottom:.0f} > {h:g} mm)")
+        return result
+
+    def align(self, edge: str) -> None:
+        self._layout(lambda ps, _r: L.align(ps, edge), f"figure.layout.align_{edge}",
+                     f"Align {edge}", min_sel=2)
+
+    def distribute(self, axis: str) -> None:
+        self._layout(lambda ps, _r: L.distribute(ps, axis), f"figure.layout.distribute_{axis}",
+                     "Distribute", min_sel=3)
+
+    def snap_to_grid(self) -> None:
+        gap = self.gap_spin.value()
+        self._layout(lambda ps, _r: L.grid(ps, gap), "figure.layout.grid",
+                     f"Grid ({gap:g} mm)")
+
+    def _on_gap_changed(self, v: float) -> None:
+        self.prefs.layout_gap_mm = float(v)
+        self._save_prefs()
+
+    def same_size(self, mode: str) -> None:
+        def fn(ps, refs):
+            L.same_size(ps, refs, ps[0], mode)
+        self._layout(fn, f"figure.layout.same_{mode}", f"Same {mode}", min_sel=2)
+
+    def align_magnification(self) -> None:
+        def fn(ps, refs):
+            return L.align_magnification(ps, refs)
+        skipped = self._layout(fn, "figure.layout.align_magnification", "Align magnification",
+                               min_sel=2)
+        if skipped:
+            self.status_message.emit(f"Align magnification: {len(skipped)} panel(s) skipped "
+                                     "(no spatial calibration)")
+
+    def nudge(self, dx: float, dy: float) -> None:
+        """Arrow keys: a burst of presses is one gesture (committed after
+        700 ms without a press)."""
+        self.apply(lambda p, _r: L.nudge([p], dx, dy), "Nudge", key="nudge", final=False,
+                   operation="figure.layout.nudge")
+
+    def page_setup_dialog(self) -> None:
+        fig = self.current_figure()
+        if fig is None:
+            return
+        last = max((p.page for p in fig.panels), default=0)
+        dlg = PageSetupDialog(fig.page, self.prefs, min_pages=last + 1, parent=self)
+        if dlg.exec() == QDialog.Accepted:
+            self.set_page(dlg.result_page())
+
+    def set_page(self, page) -> bool:
+        ed = self.current_editor()
+        if ed is None:
+            return False
+        self.flush()
+        self._before_gesture()
+        try:
+            ed.set_page(page)
+        except ValueError as exc:
+            QMessageBox.warning(self, "Page setup", str(exc))
+            return False
+        self.refresh()
+        return True
+
+    # ---- auto-layouts ------------------------------------------------------
+    def _origin(self, figure: Figure, page: int) -> tuple[float, float]:
+        return 0.0, L.below_all(figure.panels, page, self.gap_spin.value())
+
+    def split_channels(self) -> None:
+        gap = self.gap_spin.value()
+
+        def fn(ps, refs):
+            src = ps[0]
+            x, y = self._origin(self.current_figure(), src.page)
+            new = L.split_channels(src, refs[src.image_id], x, y, gap)
+            self.current_figure().panels.extend(new)
+        self._layout(fn, "figure.layout.split_channels", "Split channels", select_new=True)
+
+    def montage(self, axis: str, indices: list[int], direction: str = "row") -> None:
+        gap = self.gap_spin.value()
+
+        def fn(ps, refs):
+            src = ps[0]
+            x, y = self._origin(self.current_figure(), src.page)
+            new = L.montage(src, refs[src.image_id], axis, indices, x, y, gap, direction)
+            self.current_figure().panels.extend(new)
+        self._layout(fn, f"figure.layout.montage_{axis}", f"Montage {axis.upper()}",
+                     select_new=True)
+
+    def montage_dialog(self) -> None:
+        sel = self.selected_panels()
+        if not sel:
+            return
+        s = self.ref(sel[0]).metadata.shape
+        axes = [a for a, n in (("T", s.T), ("Z", s.Z)) if n > 1]
+        if not axes:
+            QMessageBox.information(self, "Montage", "This image has a single T and Z.")
+            return
+        axis, ok = QInputDialog.getItem(self, "Montage", "Axis:", axes, 0, False)
+        if not ok:
+            return
+        n = s.T if axis == "T" else s.Z
+        text, ok = QInputDialog.getText(self, "Montage", f"{axis} points (1–{n}, e.g. 1-3, 5):",
+                                        text=f"1-{n}")
+        if not ok:
+            return
+        try:
+            indices = L.parse_indices(text, n)
+        except ValueError as exc:
+            QMessageBox.warning(self, "Montage", str(exc))
+            return
+        direction, ok = QInputDialog.getItem(self, "Montage", "Arrange in a:", ["row", "column"],
+                                             0, False)
+        if ok and indices:
+            self.montage(axis.lower(), indices, direction)
+
+    def condition_grid(self) -> None:
+        gap = self.gap_spin.value()
+
+        def fn(ps, refs):
+            # One row per image (first selected panel of each image).
+            seen, sources = set(), []
+            for p in ps:
+                if p.image_id not in seen:
+                    seen.add(p.image_id)
+                    sources.append((p, refs[p.image_id]))
+            x, y = self._origin(self.current_figure(), ps[0].page)
+            rows = L.condition_grid(sources, x, y, gap)
+            self.current_figure().panels.extend(p for row in rows for p in row if p is not None)
+        self._layout(fn, "figure.layout.condition_grid", "Condition grid", select_new=True)
 
     # ===================================================== preview actions
     def copy_rendering(self) -> None:

@@ -20,6 +20,15 @@ Interaction
   mm, from viewport.image_rect_mm), clipped to the panel; where the crop
   runs off the image the page background shows.
 - Positions and sizes snap to the page grid when PageSetup.snap is on.
+  While dragging, alignment guides appear when an edge or centre of the
+  grabbed panel comes near one of another panel or of the page, and the
+  move snaps to it (layout.best_snap: closest first; ties -> left/top
+  edge, then centre, then right/bottom, then the lower target). The selection moves as one block (same offset).
+- Arrow keys nudge the selection by 0.1 mm (Shift: 1 mm): the canvas
+  emits `nudge_requested`, the Figures tab applies it as a gesture.
+- Unselected panels have a faint dashed outline. Outlines, selection,
+  handles, guides and the page border are *decorations*: drawn only while
+  `FigureScene.decorations` is on (the editor), never in an export.
 - Ctrl/Cmd + wheel zooms, middle-drag (or wheel) scrolls, double-click on
   empty space fits the pages.
 
@@ -36,17 +45,23 @@ from typing import Callable, Optional
 from PySide6.QtCore import QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import QBrush, QColor, QFont, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
-    QGraphicsItem, QGraphicsRectItem, QGraphicsScene, QGraphicsView, QStyle,
+    QGraphicsItem, QGraphicsLineItem, QGraphicsRectItem, QGraphicsScene, QGraphicsView, QStyle,
     QStyleOptionGraphicsItem, QWidget,
 )
 
 from ..figures import MIN_PANEL_MM, Geometry, snap_value
+from ..layout import best_snap
 from ..models import Figure, Panel
 
 PAGE_GAP_MM = 10.0
 HANDLE_PX = 9.0
 SELECT_COLOR = QColor("#2563eb")
+OUTLINE_COLOR = QColor(107, 114, 128, 140)      # faint dashed outline, unselected panels
+GUIDE_COLOR = QColor("#db2777")
+GUIDE_PX = 6.0                                  # snap distance to a guide, screen pixels
 CANVAS_BG = QColor("#9ca3af")
+NUDGE_MM = 0.1
+NUDGE_SHIFT_MM = 1.0
 
 # (pixmap or None, message shown when there is no pixmap,
 #  where the pixmap goes in panel-local mm: (x, y, w, h) or None = whole panel)
@@ -70,8 +85,10 @@ class PanelItem(QGraphicsRectItem):
         self._resizing = False
         self._press_size: tuple[float, float] = (0.0, 0.0)
         self._press_scene = QPointF()
-        self.setFlags(QGraphicsItem.ItemIsSelectable | QGraphicsItem.ItemIsMovable
-                      | QGraphicsItem.ItemSendsGeometryChanges)
+        # Not ItemIsMovable: the canvas moves the selection itself (one offset
+        # for the block, grid + guide snapping), see mouseMoveEvent.
+        self.setFlags(QGraphicsItem.ItemIsSelectable | QGraphicsItem.ItemSendsGeometryChanges)
+        self._move: Optional[dict] = None
         self.setAcceptHoverEvents(True)
         self.setPos(panel.x_mm, panel.y_mm + page_offset_mm(figure, panel.page))
         self.setPen(Qt.NoPen)
@@ -137,24 +154,26 @@ class PanelItem(QGraphicsRectItem):
             f.setPointSizeF(max(r.height() / 12.0, 1.0))
             painter.setFont(f)
             painter.drawText(r, Qt.AlignCenter | Qt.TextWordWrap, self._message or "no image")
+        scene = self.scene()
+        if not getattr(scene, "decorations", True):
+            return
+        painter.setBrush(Qt.NoBrush)
         if option.state & QStyle.State_Selected:
             pen = QPen(SELECT_COLOR, 2)
             pen.setCosmetic(True)
             painter.setPen(pen)
-            painter.setBrush(Qt.NoBrush)
             painter.drawRect(r)
             painter.fillRect(self._handle_rect(), SELECT_COLOR)
+        else:
+            pen = QPen(OUTLINE_COLOR, 1, Qt.DashLine)
+            pen.setCosmetic(True)
+            painter.setPen(pen)
+            painter.drawRect(r)
 
     # ---- interaction -----------------------------------------------------
     def _snap(self, v: float) -> float:
         page = self._figure.page
         return snap_value(v, page.grid_mm) if page.snap else v
-
-    def itemChange(self, change, value):
-        if change == QGraphicsItem.ItemPositionChange and not self._resizing:
-            off = page_offset_mm(self._figure, self.page)
-            return QPointF(self._snap(value.x()), self._snap(value.y() - off) + off)
-        return super().itemChange(change, value)
 
     def hoverMoveEvent(self, event) -> None:
         on_handle = self.isSelected() and self._handle_rect().contains(event.pos())
@@ -170,11 +189,37 @@ class PanelItem(QGraphicsRectItem):
             event.accept()
             return
         self._resizing = False
-        super().mousePressEvent(event)
+        super().mousePressEvent(event)           # selection (click / Ctrl-click)
+        if event.button() == Qt.LeftButton and isinstance(self.scene(), FigureScene):
+            moving = [it for it in self.scene().panel_items() if it.isSelected() or it is self]
+            self._move = {"press": event.scenePos(), "start": QPointF(self.pos()),
+                          "items": [(it, QPointF(it.pos())) for it in moving]}
+
+    def _move_to(self, scene_pos: QPointF) -> None:
+        """Move the block: snap the grabbed panel to guides (else the grid)
+        and give every moving panel the same offset."""
+        m = self._move
+        cand = m["start"] + (scene_pos - m["press"])
+        scene: FigureScene = self.scene()
+        moving = {id(it) for it, _ in m["items"]}
+        tol = GUIDE_PX / max(self._scale(), 1e-6)
+        w, h = self.rect().width(), self.rect().height()
+        off = page_offset_mm(self._figure, self.page)
+        xs, ys = scene.guide_targets(self.page, exclude=moving)
+        gx = best_snap([cand.x(), cand.x() + w / 2, cand.x() + w], xs, tol)
+        gy = best_snap([cand.y(), cand.y() + h / 2, cand.y() + h], ys, tol)
+        x = cand.x() + gx[0] if gx else self._snap(cand.x())
+        y = cand.y() + gy[0] if gy else self._snap(cand.y() - off) + off
+        delta = QPointF(x, y) - m["start"]
+        for it, start in m["items"]:
+            it.setPos(start + delta)
+        scene.show_guides(gx[1] if gx else None, gy[1] if gy else None, self.page)
 
     def mouseMoveEvent(self, event) -> None:
         if not self._resizing:
-            super().mouseMoveEvent(event)
+            if self._move is not None and event.buttons() & Qt.LeftButton:
+                self._move_to(event.scenePos())
+                event.accept()
             return
         d = event.scenePos() - self._press_scene
         w0, h0 = self._press_size
@@ -194,10 +239,13 @@ class PanelItem(QGraphicsRectItem):
             event.accept()
         else:
             super().mouseReleaseEvent(event)
+        self._move = None
         scene = self.scene()
         if isinstance(scene, FigureScene):
+            scene.show_guides(None, None, self.page)
             scene.commit_geometry(resized=self if self._resizing else None)
         self._resizing = False
+
 
 
 class FigureScene(QGraphicsScene):
@@ -206,9 +254,63 @@ class FigureScene(QGraphicsScene):
         self.figure: Optional[Figure] = None
         self.on_commit: Optional[CommitCallback] = None
         self._committing = False
+        self.decorations = True
+        self.page_items: list[QGraphicsRectItem] = []
+        self.guides: tuple[Optional[QGraphicsLineItem], Optional[QGraphicsLineItem]] = (None, None)
 
     def panel_items(self) -> list[PanelItem]:
         return [it for it in self.items() if isinstance(it, PanelItem)]
+
+    def set_decorations(self, on: bool) -> None:
+        """Editor decorations (outlines, selection, handles, guides, page
+        border) on or off. Off = what an export shows."""
+        self.decorations = bool(on)
+        for page in self.page_items:
+            page.setPen(QPen(QColor("#6b7280"), 0) if on else QPen(Qt.NoPen))
+        if not on:
+            self.show_guides(None, None, 0)
+        self.update()
+
+    def add_guides(self) -> None:
+        pen = QPen(GUIDE_COLOR, 1, Qt.DashLine)
+        pen.setCosmetic(True)
+        lines = []
+        for _ in range(2):
+            ln = QGraphicsLineItem()
+            ln.setPen(pen)
+            ln.setZValue(1e6)
+            ln.setVisible(False)
+            self.addItem(ln)
+            lines.append(ln)
+        self.guides = (lines[0], lines[1])
+
+    def guide_targets(self, page: int, exclude: set) -> tuple[list[float], list[float]]:
+        """Edges and centres of the page and of the non-moving panels on it
+        (scene coordinates)."""
+        w, h = self.figure.page.size_mm
+        off = page_offset_mm(self.figure, page)
+        xs, ys = [0.0, w / 2, w], [off, off + h / 2, off + h]
+        for it in self.panel_items():
+            if id(it) in exclude or it.page != page:
+                continue
+            r = QRectF(it.pos(), it.rect().size())
+            xs += [r.left(), r.center().x(), r.right()]
+            ys += [r.top(), r.center().y(), r.bottom()]
+        return xs, ys
+
+    def show_guides(self, x: Optional[float], y: Optional[float], page: int) -> None:
+        vline, hline = self.guides
+        if vline is None or self.figure is None:
+            return
+        w, h = self.figure.page.size_mm
+        off = page_offset_mm(self.figure, page)
+        on = self.decorations
+        vline.setVisible(on and x is not None)
+        hline.setVisible(on and y is not None)
+        if x is not None:
+            vline.setLine(x, off, x, off + h)
+        if y is not None:
+            hline.setLine(0, y, w, y)
 
     def commit_geometry(self, resized: Optional[PanelItem] = None) -> None:
         """Compare items with the model; report changes once per gesture."""
@@ -236,6 +338,7 @@ class FigureScene(QGraphicsScene):
 
 class FigureCanvas(QGraphicsView):
     selection_changed = Signal(list)           # selected panel ids
+    nudge_requested = Signal(float, float)     # dx, dy in mm
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -266,6 +369,8 @@ class FigureCanvas(QGraphicsView):
         sc = self._scene
         sc.blockSignals(True)
         sc.clear()
+        sc.page_items = []
+        sc.guides = (None, None)
         sc.figure = figure
         if figure is not None:
             w, h = figure.page.size_mm
@@ -278,12 +383,15 @@ class FigureCanvas(QGraphicsView):
                 page.setZValue(-10)
                 page.setData(0, f"page:{i}")
                 sc.addItem(page)
+                sc.page_items.append(page)
             for z, panel in enumerate(figure.panels):
                 item = PanelItem(panel, figure, provider(panel) if provider else (None, "", None))
                 item.setZValue(z)
                 sc.addItem(item)
                 if selected and panel.id in selected:
                     item.setSelected(True)
+            sc.add_guides()
+            sc.set_decorations(sc.decorations)
             margin = PAGE_GAP_MM
             total_h = page_offset_mm(figure, figure.page.n_pages - 1) + h
             sc.setSceneRect(-margin, -margin, w + 2 * margin, total_h + 2 * margin)
@@ -350,6 +458,16 @@ class FigureCanvas(QGraphicsView):
             event.accept()
             return
         super().wheelEvent(event)
+
+    def keyPressEvent(self, event) -> None:
+        step = NUDGE_SHIFT_MM if event.modifiers() & Qt.ShiftModifier else NUDGE_MM
+        d = {Qt.Key_Left: (-step, 0.0), Qt.Key_Right: (step, 0.0),
+             Qt.Key_Up: (0.0, -step), Qt.Key_Down: (0.0, step)}.get(event.key())
+        if d is not None and self.selected_ids():
+            self.nudge_requested.emit(*d)
+            event.accept()
+            return
+        super().keyPressEvent(event)
 
     def mousePressEvent(self, event) -> None:
         if event.button() == Qt.MiddleButton:

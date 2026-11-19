@@ -21,6 +21,8 @@ hash-chained operation log, and a PySide6 `QGraphicsView` UI.
 | `migrations.py` | Raw-dict migrations of `project.json` applied before validation (1 → 2: `Figure.page` `PagePreset` → `PageSetup`) |
 | `figures.py` | Figure editing without Qt: create/rename figures, panels from library images (copy of display settings), move/resize/delete, `FigureEditor` gestures with snapshot undo/redo |
 | `viewport.py` | Viewport = crop (pure geometry): uniform scale, zoom % (100 % = whole image fitted), pan, resize at constant scale, rotation about the crop centre, orientation mapping, where the image sits in its panel |
+| `layout.py` | Layout tools (pure): align, distribute, grid with gap, nudge, same size, align magnification (µm per page-mm), auto-layouts (split channels, montage, condition grid) with `lock_group` |
+| `preferences.py` | App preferences in `<workspace>/preferences.json`: journal presets (data), default preset, layout gap. Not project data, not logged |
 | `render.py` | `PanelRenderer`: raw plane(s) or max projection → crop by array slicing → `render_composite` → orientation; LRU cache keyed by source hash + settings |
 | `readers/` | `ImageSource` interface (T, Z, C, Y, X; lazy `get_plane`). `tiff.py`: plain TIFF, MetaMorph TIFF (XML), MetaMorph STK (UIC tags). `metamorph.py`: metadata parsing |
 | `display.py` | window → gamma → invert → LUT → additive composite → RGB8; orientation; saturation; auto-window |
@@ -31,8 +33,9 @@ hash-chained operation log, and a PySide6 `QGraphicsView` UI.
 | `ui/main_window.py` | Tabs Home · Library · Figures · Preferences · About. Library tab = tree (left) · viewer (centre) · inspector (right); gesture commit |
 | `ui/home_tab.py` | Project list (new / open / archive / restore), figures of the open project |
 | `ui/figures_tab.py`, `ui/figure_canvas.py` | Figure selector, page canvas in mm at journal width, panel items (select, rubber band, move, resize handle), undo/redo, live-gesture commit, Preview · Info inspector |
+| `ui/page_setup.py` | Page setup dialog (preset, size, orientation, pages, background, grid, snap) |
 | `ui/panel_inspector.py` | Preview tab: edits all selected panels with mixed states; viewport mini-view, zoom, rotation/flips, T/Z + max projection, channel controls by index, copy/paste rendering and viewport, image defaults, replace image |
-| `ui/info_tabs.py` | Preferences (default page preset, read-only for now) and About |
+| `ui/info_tabs.py` | Preferences (editable journal presets, default preset) and About |
 | `ui/library_panel.py` | Virtual tree, search/rating filter, metadata, tags / rating / key–values |
 | `ui/channel_controls.py` | One channel: visibility, LUT, histogram gates, Black/White, gamma, invert, saturation; mixed state for multi-panel editing |
 | `ui/workers.py` | Background hashing (`QThreadPool`, one file at a time) |
@@ -84,6 +87,14 @@ Continuous controls (sliders, mini-view drag, wheel zoom) use
 redraws; the gesture is committed on release, after 700 ms idle, or when
 anything else happens. Log field paths name the changed leaves
 (`channels[1].white`, keyed by channel index; `crop.x`).
+
+Layout tools run as one `FigureEditor.layout()` gesture each
+(`figure.layout.*`, one entry per panel changed or added). The canvas moves
+the selection itself as one block: the grabbed panel snaps to alignment
+guides (edges/centres of other panels and of the page) or else to the grid,
+and every selected panel gets the same offset. Outlines, selection,
+handles, guides and the page border are decorations
+(`FigureScene.decorations`), off for exports.
 
 The viewport is `Panel.crop` (raw pixels). The panel shows it at one
 uniform scale; the canvas draws only the part of the crop that lies on the

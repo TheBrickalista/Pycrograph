@@ -6,7 +6,39 @@ All notable changes to Pycrograph are documented here. The format follows
 
 ## [Unreleased]
 
-Figure editor, steps 1 and 2 (docs/design/figure-editor.md §6).
+Figure editor, steps 1 to 3 (docs/design/figure-editor.md §6).
+
+### Added (step 3: layout)
+- Layout toolbar: align left / right / top / bottom / centres, distribute
+  horizontally / vertically, Grid (rows and columns from the current
+  positions, configurable gap, top-left panel fixed), same width / height /
+  both, Align magnification (resizes panels so µm per page-mm matches the
+  top-left panel; crops unchanged; uncalibrated panels skipped).
+- Arrow keys nudge the selection by 0.1 mm (Shift: 1 mm); a burst of
+  presses is one gesture.
+- Alignment guides while dragging (edges and centres of other panels and of
+  the page), with snapping; the selection moves as one block.
+- Page setup dialog: journal preset, size, orientation, pages, background,
+  grid and snap (one figure-level log entry).
+- Preferences: editable journal presets stored as data in
+  `<workspace>/preferences.json` (built in: Nature single 89 mm and double
+  183 mm column, max height 170 mm, 300 dpi, Arial 8 pt), default preset for
+  new figures, layout gap.
+- Auto-layouts: split channels (one panel per channel + merge), montage of
+  T points or Z slices (row or column), condition grid (rows = images of the
+  selected panels, columns = each channel then the merge); each layout's
+  panels share one `lock_group`.
+- Faint dashed outline on unselected panels (canvas only: decorations are
+  off for export).
+
+### Changed (step 3)
+- Multi-panel pan converts the displacement through each panel's own
+  orientation (it used the first panel's).
+- Figure-level log entries use leaf paths (`page.width_mm`).
+
+### Fixed (step 3)
+- The Preview inspector could show the previous selection's widgets until
+  the event loop deleted them.
 
 ### Added (step 2: Preview)
 - Inspector tabs Preview · Info. Preview edits all selected panels; values
