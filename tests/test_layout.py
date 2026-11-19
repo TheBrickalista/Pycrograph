@@ -69,6 +69,31 @@ def test_nudge():
     assert (ps[0].x_mm, ps[0].y_mm) == pytest.approx((1.1, 0))
 
 
+def test_best_snap_closest_wins():
+    # left 10.3 -> 10 (0.3), right 30.3 -> 30.1 (0.2): right is closer.
+    assert L.best_snap([10.3, 20.3, 30.3], [10.0, 30.1], tol=1.0) == pytest.approx((-0.2, 30.1, 2))
+    assert L.best_snap([10.3, 20.3, 30.3], [50.0], tol=1.0) is None
+    assert L.best_snap([10.3], [11.3], tol=1.0) == pytest.approx((1.0, 11.3, 0))   # tol inclusive
+
+
+def test_best_snap_tie_break_is_deterministic():
+    """Equal-width panels: three pairs at the same distance; float noise
+    (as on CI) or target order must not change the pick: the moving
+    panel's left edge, then the lower target."""
+    x = 42.0 + 0.4116182572614164                      # value seen on CI-like scales
+    values = [x, x + 20.0, x + 40.0]                    # left, centre, right of a 40 mm panel
+    for targets in ([0.0, 91.5, 183.0, 42.0, 62.0, 82.0], [82.0, 62.0, 42.0], [62.0, 82.0, 42.0]):
+        d, t, i = L.best_snap(values, targets, tol=1.5)
+        assert (t, i) == (42.0, 0) and x + d == pytest.approx(42.0)
+    # A tie between two targets for the same value: the lower target wins,
+    # whatever their order (e.g. 1 mm either side).
+    assert L.best_snap([50.0], [51.0, 49.0], tol=2)[1] == 49.0
+    assert L.best_snap([50.0], [49.0, 51.0], tol=2)[1] == 49.0
+    # Centre beats right on a tie; a strictly closer right still wins.
+    assert L.best_snap([0.0, 10.0, 20.0], [10.5, 20.5], tol=1)[2] == 1
+    assert L.best_snap([0.0, 10.0, 20.0], [10.5, 20.4], tol=1)[2] == 2
+
+
 def test_parse_indices():
     assert L.parse_indices("1-3, 5", 6) == [0, 1, 2, 4]
     assert L.parse_indices("3-1 9", 4) == [2, 1, 0]

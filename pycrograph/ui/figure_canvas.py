@@ -22,7 +22,8 @@ Interaction
 - Positions and sizes snap to the page grid when PageSetup.snap is on.
   While dragging, alignment guides appear when an edge or centre of the
   grabbed panel comes near one of another panel or of the page, and the
-  move snaps to it. The selection moves as one block (same offset).
+  move snaps to it (layout.best_snap: closest first; ties -> left/top
+  edge, then centre, then right/bottom, then the lower target). The selection moves as one block (same offset).
 - Arrow keys nudge the selection by 0.1 mm (Shift: 1 mm): the canvas
   emits `nudge_requested`, the Figures tab applies it as a gesture.
 - Unselected panels have a faint dashed outline. Outlines, selection,
@@ -49,6 +50,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..figures import MIN_PANEL_MM, Geometry, snap_value
+from ..layout import best_snap
 from ..models import Figure, Panel
 
 PAGE_GAP_MM = 10.0
@@ -204,8 +206,8 @@ class PanelItem(QGraphicsRectItem):
         w, h = self.rect().width(), self.rect().height()
         off = page_offset_mm(self._figure, self.page)
         xs, ys = scene.guide_targets(self.page, exclude=moving)
-        gx = _best_snap([cand.x(), cand.x() + w / 2, cand.x() + w], xs, tol)
-        gy = _best_snap([cand.y(), cand.y() + h / 2, cand.y() + h], ys, tol)
+        gx = best_snap([cand.x(), cand.x() + w / 2, cand.x() + w], xs, tol)
+        gy = best_snap([cand.y(), cand.y() + h / 2, cand.y() + h], ys, tol)
         x = cand.x() + gx[0] if gx else self._snap(cand.x())
         y = cand.y() + gy[0] if gy else self._snap(cand.y() - off) + off
         delta = QPointF(x, y) - m["start"]
@@ -244,16 +246,6 @@ class PanelItem(QGraphicsRectItem):
             scene.commit_geometry(resized=self if self._resizing else None)
         self._resizing = False
 
-
-def _best_snap(values: list[float], targets: list[float], tol: float):
-    """(correction, target) of the closest value-target pair within tol."""
-    best = None
-    for v in values:
-        for t in targets:
-            d = t - v
-            if abs(d) <= tol and (best is None or abs(d) < abs(best[0])):
-                best = (d, t)
-    return best
 
 
 class FigureScene(QGraphicsScene):

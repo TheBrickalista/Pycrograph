@@ -134,6 +134,45 @@ def grid(panels: Sequence[Panel], gap_mm: float = DEFAULT_GAP_MM) -> None:
         y += row_h[i] + gap_mm
 
 
+# ---------------------------------------------------------- drag snapping
+SNAP_TIE_MM = 1e-6     # distances closer than this (1 nm on the page) are a tie
+
+
+def best_snap(values: Sequence[float], targets: Iterable[float], tol: float,
+              tie: float = SNAP_TIE_MM) -> Optional[tuple[float, float, int]]:
+    """Alignment-guide snap while dragging, on one axis.
+
+    `values` are the moving panel's coordinates in PRIORITY order:
+    (left, centre, right) or (top, centre, bottom). `targets` are the
+    edges/centres of the page and of the other panels. Returns
+    (correction, target, value index) of the closest pair within `tol`,
+    or None.
+
+    Ties are common, not exotic: two panels of the same width have their
+    left, centre and right edges equally far from each other's, and the
+    float distances then differ only in the last bits, depending on the
+    view scale. So distances within `tie` are equal, and ties are broken
+    by a fixed rule, independent of float noise and of item order:
+      1. the moving panel's left/top edge, then its centre, then its
+         right/bottom edge (edges are what one aligns most, read in
+         reading order);
+      2. then the lower target coordinate.
+    """
+    best: Optional[tuple[float, float, int]] = None
+    for i, v in enumerate(values):
+        for t in targets:
+            d = t - v
+            if abs(d) > tol:
+                continue
+            if best is None:
+                best = (d, t, i)
+                continue
+            gap = abs(d) - abs(best[0])
+            if gap < -tie or (abs(gap) <= tie and (i, t) < (best[2], best[1])):
+                best = (d, t, i)
+    return best
+
+
 def nudge(panels: Iterable[Panel], dx: float, dy: float) -> None:
     for p in panels:
         p.x_mm, p.y_mm = _r(p.x_mm + dx), _r(p.y_mm + dy)

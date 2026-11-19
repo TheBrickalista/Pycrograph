@@ -95,29 +95,54 @@ def test_arrow_nudges_one_gesture(app, setup):
     assert view.item_for(pa.id).pos().x() == pytest.approx(pa.x_mm)
 
 
-def test_drag_guides_snap_to_other_panel(app, setup):
-    w, ids, (pa, pb, pz) = setup
+def _drag_pz_near_pb(app, w, pb, pz, pz_width: float, view_size=(800, 600)):
+    """Put pz below pb with its left edge 1.2 mm right of pb's, then drag it
+    0.9 mm left. The canvas gets a FIXED size first: the pixel rounding of
+    mapFromScene (and so the real drag delta) depends on the view scale,
+    which otherwise differs between platforms."""
     tab, view = w.figures_tab, w.figures_tab.canvas
-    # pz sits below pa, almost left-aligned with pb: drag it next to pb's left edge.
     tab.set_page(PageSetup(snap=False))
-    f = tab.current_figure()
-    tab.current_editor().set_geometry({pz.id: (pb.x_mm + 1.2, 60, pz.width_mm, pz.height_mm)})
+    tab.current_editor().set_geometry({pz.id: (pb.x_mm + 1.2, 60, pz_width, pz_width)})
     tab.refresh()
+    view.setFixedSize(*view_size)
+    app.processEvents()
     view.fit_pages()
     view.select_ids([])              # (add_to_figure left all three selected = one block)
     item = view.item_for(pz.id)
     start = item.mapToScene(item.rect().center())
     a = view.mapFromScene(start)
-    b = view.mapFromScene(start + QPointF(-0.9, 0.0))       # 0.3 mm right of pb's left edge
+    b = view.mapFromScene(start + QPointF(-0.9, 0.0))       # ~0.3 mm right of pb's left edge
     _mouse(view, QEvent.MouseButtonPress, a)
     _mouse(view, QEvent.MouseMove, a + (b - a) * 0.5, Qt.NoButton)
     _mouse(view, QEvent.MouseMove, b, Qt.NoButton)
     vline, _hline = view.figure_scene.guides
-    assert vline.isVisible() and vline.line().x1() == pytest.approx(pb.x_mm)
+    guide = vline.line().x1() if vline.isVisible() else None
     _mouse(view, QEvent.MouseButtonRelease, b, Qt.LeftButton, Qt.NoButton)
     app.processEvents()
-    assert not vline.isVisible()
-    assert f.panel(pz.id).x_mm == pytest.approx(pb.x_mm)      # snapped to the guide
+    assert not vline.isVisible()                            # guides only while dragging
+    return guide, tab.current_figure().panel(pz.id).x_mm
+
+
+def test_drag_guides_snap_to_other_panel(app, setup):
+    w, ids, (pa, pb, pz) = setup
+    # pz narrower than pb: only pz's left edge can meet one of pb's edges.
+    assert pb.width_mm == 40
+    guide, x = _drag_pz_near_pb(app, w, pb, pz, pz_width=30.0)
+    assert guide == pytest.approx(pb.x_mm)
+    assert x == pytest.approx(pb.x_mm)                       # the snap result itself
+
+
+@pytest.mark.parametrize("view_size", [(566, 486), (800, 600), (1084, 808)])
+def test_drag_guides_tie_breaks_on_left_edge(app, setup, view_size):
+    """Same width as pb: pz's left, centre and right are all equally close
+    to pb's left, centre and right (a three-way tie whose float distances
+    differ only by rounding, at scales that made CI pick pb's right edge).
+    The rule picks the left edge at every scale; the position is the same
+    for all three."""
+    w, ids, (pa, pb, pz) = setup
+    guide, x = _drag_pz_near_pb(app, w, pb, pz, pz_width=pb.width_mm, view_size=view_size)
+    assert guide == pytest.approx(pb.x_mm)
+    assert x == pytest.approx(pb.x_mm)
 
 
 def _render(scene, rect: QRectF) -> QImage:
