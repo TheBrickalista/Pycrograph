@@ -135,6 +135,25 @@ class SaturationStats(BaseModel):
 # --------------------------------------------------------------------------
 
 
+class ExtractInfo(BaseModel):
+    """This ImageRef reads a LIGHT-archive extract, not the original file:
+    an OME-TIFF holding only the planes (t × z × c) and the region (origin,
+    size, raw pixels of the ORIGINAL image) that the figures used. The
+    ImageRef keeps the original's metadata, shape and SHA-256; the extract
+    reader (readers/extract.py) presents it with the original geometry."""
+    sha256: str                          # of the extract file itself
+    origin_x: int = Field(ge=0)
+    origin_y: int = Field(ge=0)
+    width: int = Field(ge=1)
+    height: int = Field(ge=1)
+    t: List[int]
+    z: List[int]
+    c: List[int]
+    source_sha256: Optional[str] = None  # the original raw file (also ImageRef.sha256)
+    source_size_bytes: Optional[int] = None
+    margin_px: int = 0
+
+
 class ImageRef(BaseModel):
     id: str
     filename: str
@@ -163,6 +182,8 @@ class ImageRef(BaseModel):
 
     # Import-time warnings recorded for the integrity report (8-bit, ...).
     warnings: List[str] = Field(default_factory=list)
+    # Set when the image was restored from a light archive (an extract).
+    extract: Optional[ExtractInfo] = None
 
 
 class Dataset(BaseModel):

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "pycrograph"
-version = "0.1.0"
+version = "0.2.0"
 description = "Non-destructive, provenance-tracked figure builder for fluorescence microscopy images (GPLv3)."
 readme = "README.md"
 requires-python = ">=3.11"

@@ -6,7 +6,43 @@ All notable changes to Pycrograph are documented here. The format follows
 
 ## [Unreleased]
 
-Figure editor, steps 1 to 6 (docs/design/figure-editor.md §6).
+## [0.2.0] - 2026-11-19
+
+Figure editor, steps 1 to 6 (docs/design/figure-editor.md §6), and project
+archives.
+
+### Added (archives)
+- `.pcarchive` project archives (zip, format_version 1; PysternBlot's
+  `.pbarchive` system adapted): manifest with the SHA-256 and size of every
+  member, the SHA-256 of the project state, app version, creation time,
+  level and log-chain status.
+- Light level: per image, the planes and region the figures show (plus a
+  32 px margin) as uncompressed OME-TIFF with calibration, original metadata
+  and the source file's SHA-256; restored images read these extracts with the
+  original geometry (`ImageRef.extract`, `readers/extract.py`).
+- Complete level: every original raw file, byte-exact, stream-copied and
+  SHA-256 verified after copy.
+- Sources verified before archiving (missing refused; modified refused unless
+  allowed, then logged); optional exports + sidecars and integrity report.
+- Import as a new project, archive treated as untrusted: safe member names,
+  no symlinks or duplicates, manifest/member agreement, size, total and
+  compression-ratio limits (binary 1000:1; JSON/HTML/SVG 200:1 and 64 MB),
+  free disk space (members + 5 %) in the staging and workspace locations,
+  every SHA-256 and the project-state hash verified in a staging directory
+  before anything is written; a failure leaves nothing.
+- Images restored from a light archive are reported as such everywhere: the
+  export sidecar (`extract` block, `light_extract` flag, extract SHA-256
+  verified, original SHA-256 recorded but never shown as verified), the PDF
+  info page, the source-data sidecar, the integrity report (JSON + HTML) and
+  an info-level consistency item.
+- Home tab: Export archive… / Import archive…, with cancellable progress;
+  files are streamed, never read whole into memory.
+- Integrity report: archives section (level, manifest hash, members verified,
+  archive file re-checked).
+
+### Fixed
+- Exporting without a running Qt application (scripts) crashed the
+  interpreter; a QApplication is now created when needed.
 
 ### Added (step 6: consistency check, export, provenance)
 - Consistency check (toolbar, and automatically before export): per row,

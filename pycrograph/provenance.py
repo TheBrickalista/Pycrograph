@@ -48,6 +48,25 @@ def sidecar_name(name: str, sources: bool = False) -> str:
     return f"{name}.sources.provenance.json" if sources else f"{name}.provenance.json"
 
 
+EXTRACT_NOTE = ("the original raw file is not present: pixels come from a light-archive extract "
+                "(only the archived planes and region); the original's SHA-256 is recorded, "
+                "not verified")
+
+
+def extract_block(ref: ImageRef, extract_verified: Optional[bool] = None) -> dict[str, Any]:
+    """What a light-archive extract is, for sidecars and integrity reports.
+    The ORIGINAL's SHA-256 is given as recorded, never as verified: only the
+    extract file can be checked."""
+    x = ref.extract
+    return {"kind": "light_archive_extract", "original_present": False, "note": EXTRACT_NOTE,
+            "extract_sha256": x.sha256, "extract_sha256_verified_at_export": extract_verified,
+            "origin_px": {"x": x.origin_x, "y": x.origin_y},
+            "size_px": {"width": x.width, "height": x.height}, "margin_px": x.margin_px,
+            "archived_t": list(x.t), "archived_z": list(x.z), "archived_c": list(x.c),
+            "source_sha256": x.source_sha256, "source_size_bytes": x.source_size_bytes,
+            "source_sha256_verified": False}
+
+
 def rendered_crop(panel: Panel, ref: ImageRef) -> dict[str, int]:
     s = ref.metadata.shape
     x0, y0, x1, y1 = crop_bounds(panel.crop, s.X, s.Y)
@@ -115,11 +134,14 @@ def panel_record(project: Project, figure: Figure, panel: Panel, index: int,
     ppi = V.px_per_mm(panel, s.X, s.Y) * 25.4
     if ppi < figure.page.preset.dpi:
         flags.append("upsampled")
+    if ref.extract is not None:
+        flags.append("light_extract")
     x0, y0, x1, y1 = crop_bounds(panel.crop, s.X, s.Y)
     oriented_w, oriented_h = V.oriented_wh(x1 - x0, y1 - y0, panel.rotation_deg)
     rec.update({
         "image": {"filename": ref.filename, "path": ref.path, "original_path": ref.original_path,
                   "stored_relpath": ref.stored_relpath, "sha256_recorded": ref.sha256,
+                  "original_present": ref.extract is None,
                   "reader": ref.reader, "reader_version": ref.reader_version,
                   "shape_tzcyx": list(s.as_tuple()), "dtype": m.dtype, "bit_depth": m.bit_depth,
                   "calibration": m.calibration.model_dump(), **(source or {})},
@@ -143,6 +165,8 @@ def panel_record(project: Project, figure: Figure, panel: Panel, index: int,
         "shapes": [sh.model_dump(mode="json") for sh in panel.shapes],
         "time_offset_s": panel.time_offset_s, "z_offset": panel.z_offset,
     })
+    if ref.extract is not None:
+        rec["extract"] = extract_block(ref, (source or {}).get("extract_sha256_verified_at_export"))
     if panel.inset_of:
         parent = figure.panel(panel.inset_of)
         rect = I.rect_on_parent(parent, panel, ref) if parent is not None else None

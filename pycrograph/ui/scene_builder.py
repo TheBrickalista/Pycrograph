@@ -75,9 +75,24 @@ def overlay_builder(project: Project, figure_getter: Callable[[], Optional[Figur
     return build
 
 
+_APP = None
+
+
+def ensure_qt_app():
+    """Graphics scenes need a QApplication; scripts exporting without the GUI
+    get one here (otherwise Qt crashes the interpreter)."""
+    global _APP
+    from PySide6.QtWidgets import QApplication
+    app = QApplication.instance()
+    if app is None:
+        _APP = app = QApplication([])
+    return app
+
+
 def export_scene(project: Project, figure: Figure, renderer: PanelRenderer,
                  smooth: bool = False, max_side: Optional[int] = None) -> FigureScene:
     """The figure as exported: native rasters, no editor decorations."""
+    ensure_qt_app()
     scene = FigureScene()
     scene.decorations = False
     scene.smooth_images = smooth

@@ -8,8 +8,8 @@ authors:
     orcid: "https://orcid.org/0000-0001-6597-9086"
 repository-code: "https://github.com/TheBrickalista/Pycrograph"
 license: GPL-3.0-only
-version: 0.1.0
-date-released: "2026-11-18"
+version: 0.2.0
+date-released: "2026-11-19"
 # doi: added once the first release is archived on Zenodo
 abstract: >
   Pycrograph is a GPLv3 Python desktop application for building

@@ -57,5 +57,6 @@ def test_docs_python_matches_ci_docs_job():
 def test_shared_core_markers_present():
     """Files copied from PysternBlot keep their provenance marker."""
     for rel in ("pycrograph/logchain.py", "pycrograph/jsonsafe.py", "pycrograph/integrity.py",
-                "pycrograph/ui/zoomable_graphics_view.py", "pycrograph/ui/levels_histogram.py"):
+                "pycrograph/ui/zoomable_graphics_view.py", "pycrograph/ui/levels_histogram.py",
+                "pycrograph/archive.py"):
         assert "SHARED-CORE candidate (from PysternBlot" in (ROOT / rel).read_text(encoding="utf-8"), rel

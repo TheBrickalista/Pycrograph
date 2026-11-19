@@ -23,6 +23,7 @@ hash-chained operation log, and a PySide6 `QGraphicsView` UI.
 | `viewport.py` | Viewport = crop (pure geometry): uniform scale, zoom % (100 % = whole image fitted), pan, resize at constant scale, rotation about the crop centre, orientation mapping, where the image sits in its panel |
 | `layout.py` | Layout tools (pure): align, distribute, grid with gap, nudge, same size, align magnification (µm per page-mm), auto-layouts (split channels, montage, condition grid) with `lock_group` |
 | `preferences.py` | App preferences in `<workspace>/preferences.json`: journal presets (data), default preset, layout gap. Not project data, not logged |
+| `archive.py` | `.pcarchive` export / import (light: OME-TIFF extracts of what the figures use; complete: raw files), streamed + hashed, untrusted-input checks — **shared-core** helpers (adapted) |
 | `consistency.py` | Pre-export check (§2.9), pure: per row / column / lock group and per panel; `Issue(severity, code, message, panel_ids)` |
 | `export.py` | Figure export (PDF, SVG, TIFF, PNG) from the shared scene, source-data export (OME-TIFF), source verification, metadata embedding, one log entry per export |
 | `provenance.py` | Export sidecar (pure): per panel source + hash, crop as rendered, orientation, channels, flags, resolved labels, scale-bar basis, insets, shapes |
@@ -30,7 +31,7 @@ hash-chained operation log, and a PySide6 `QGraphicsView` UI.
 | `labels.py` | Label tokens resolved at render time ([channels], [time…], [z…], [zoom], [image], [dataset], [tags], [kv:Key]); unresolved → "?" + reported |
 | `scalebar.py` | Scale bar length on the page from the calibration and the viewport scale; reason when unavailable; non-isotropic pixels |
 | `render.py` | `PanelRenderer`: raw plane(s) or max projection → crop by array slicing → `render_composite` → orientation; LRU cache keyed by source hash + settings |
-| `readers/` | `ImageSource` interface (T, Z, C, Y, X; lazy `get_plane`). `tiff.py`: plain TIFF, MetaMorph TIFF (XML), MetaMorph STK (UIC tags). `metamorph.py`: metadata parsing |
+| `readers/` | `ImageSource` interface (T, Z, C, Y, X; lazy `get_plane`); `open_image_ref` (original or light-archive extract, `extract.py`). `tiff.py`: plain TIFF, MetaMorph TIFF (XML), MetaMorph STK (UIC tags). `metamorph.py`: metadata parsing |
 | `display.py` | window → gamma → invert → LUT → additive composite → RGB8; orientation; saturation; auto-window |
 | `storage.py` | `Workspace` (atomic saves), import **by reference**, SHA-256, `check_image`, relink (single + drive-prefix), copy into project, annotations, thumbnails |
 | `logchain.py` | Hash-chained log — **shared-core** (verbatim from PysternBlot) |
@@ -39,6 +40,7 @@ hash-chained operation log, and a PySide6 `QGraphicsView` UI.
 | `ui/main_window.py` | Tabs Home · Library · Figures · Preferences · About. Library tab = tree (left) · viewer (centre) · inspector (right); gesture commit |
 | `ui/home_tab.py` | Project list (new / open / archive / restore), figures of the open project |
 | `ui/figures_tab.py`, `ui/figure_canvas.py` | Figure selector, page canvas in mm at journal width, panel items (select, rubber band, move, resize handle), undo/redo, live-gesture commit, Preview · Info inspector |
+| `ui/archive_dialog.py` | Archive level and optional contents |
 | `ui/export_dialogs.py` | Consistency dialog (click selects panels; "Export anyway") and export settings dialog |
 | `ui/scene_builder.py` | Panel visual + overlay builder shared by canvas and export; `export_scene` (decorations off, native rasters) |
 | `ui/insets_inspector.py` | Insets & Shapes tab: create inset, inset style and follow flags, shapes (draw, list, style, delete, copy/paste) |
@@ -165,6 +167,32 @@ pHYs + text chunks). Order: verify sources → write the sidecar
 (`provenance.py`) and hash it → write the file(s) embedding that hash →
 hash them → one log entry (`export.figure` / `export.sources`). The
 integrity report lists every logged export and re-hashes its files.
+
+## Archives
+
+`.pcarchive` = zip: `pcarchive/manifest.json` (SHA-256 + size of every
+member, SHA-256 of the project state, level, log-chain status) and
+`pcarchive/project/` mirroring a project directory (`project.json`, plus
+`images/` for a complete archive or `extracts/` for a light one), optional
+`exports/` and `reports/`. The archived project.json has its image refs
+relinked inside the archive and one `project.archive` log entry saying so;
+the live project logs `export.archive`. A light extract keeps only the
+planes and region the figures use; its ImageRef keeps the original metadata
+and SHA-256 and gains `extract`, and `readers/extract.ExtractSource`
+presents it with the original geometry (zeros outside the region, planes not
+archived refused). Import: container checks, every member streamed into a
+staging directory outside the workspace and hashed, project-state hash, log
+chain and image records checked; then a new project is created and
+`project.import_archive` logged. Image members are stored uncompressed (raw
+data does not compress), so the compression-ratio limit (1000:1) flags bombs;
+text members have their own cap (200:1, 64 MB) and the exporter stores a text
+member uncompressed when it would come near it. Free disk space (members + 5 %)
+is checked in the staging and workspace locations first.
+
+Provenance of restored light extracts: `provenance.extract_block` (export
+sidecar, source-data sidecar, PDF info page, integrity report) says the
+original is not present, gives the extract's own SHA-256 (the one verified)
+and the original's as recorded only; the consistency check adds an info item.
 
 ## Format migrations
 

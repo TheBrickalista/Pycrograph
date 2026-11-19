@@ -20,7 +20,8 @@ from pathlib import Path
 from .base import ImageSource, UnsupportedImageError
 from .tiff import TiffSource
 
-__all__ = ["ImageSource", "UnsupportedImageError", "TiffSource", "open_image", "sniff_format"]
+__all__ = ["ImageSource", "UnsupportedImageError", "TiffSource", "open_image", "open_image_ref",
+           "sniff_format"]
 
 IMPORT_FILE_FILTER = "Microscopy images (*.tif *.tiff *.stk *.TIF *.TIFF *.STK);;All files (*)"
 
@@ -51,3 +52,14 @@ def open_image(path: str | Path) -> ImageSource:
     if kind != "tiff":
         raise UnsupportedImageError(f"{path.name}: unsupported file format ({kind}).")
     return TiffSource(path)
+
+
+def open_image_ref(path: str | Path, ref) -> ImageSource:
+    """Open what an ImageRef points at: the original file, or a light-archive
+    extract (ref.extract set) presented with the original geometry."""
+    if getattr(ref, "extract", None) is not None:
+        from .extract import ExtractSource
+        if not Path(path).is_file():
+            raise FileNotFoundError(path)
+        return ExtractSource(path, ref.metadata, ref.extract)
+    return open_image(path)

@@ -55,7 +55,7 @@ from .models import (
     Project,
     ProjectMeta,
 )
-from .readers import UnsupportedImageError, open_image
+from .readers import UnsupportedImageError, open_image, open_image_ref
 
 HASH_CHUNK = 4 * 1024 * 1024
 
@@ -360,10 +360,17 @@ class RefStatus(str, Enum):
     MODIFIED = "modified"           # re-hashed and content differs
 
 
+def expected_sha256(ref: ImageRef) -> Optional[str]:
+    """SHA-256 of the file this ref READS: the original raw file, or the
+    light-archive extract (ref.sha256 then still names the original)."""
+    return ref.extract.sha256 if ref.extract is not None else ref.sha256
+
+
 def check_image(workspace: Workspace, project: Project, ref: ImageRef,
                 verify_hash: bool = False) -> RefStatus:
     """Cheap check by default (exists + size + mtime). verify_hash re-reads
-    the file and compares SHA-256 (slow for big files)."""
+    the file and compares SHA-256 (slow for big files). For a light-archive
+    extract the extract's own hash is compared."""
     path = workspace.resolve_image_path(project, ref)
     if not path.is_file():
         return RefStatus.MISSING
@@ -373,7 +380,7 @@ def check_image(workspace: Workspace, project: Project, ref: ImageRef,
     same_fp = st.st_size == ref.size_bytes and st.st_mtime_ns == ref.mtime_ns
     if not verify_hash:
         return RefStatus.OK if same_fp else RefStatus.CHANGED
-    return RefStatus.OK if sha256_file(path) == ref.sha256 else RefStatus.MODIFIED
+    return RefStatus.OK if sha256_file(path) == expected_sha256(ref) else RefStatus.MODIFIED
 
 
 class RelinkError(ValueError):
@@ -542,7 +549,7 @@ def write_thumbnail(workspace: Workspace, project: Project, ref: ImageRef) -> Op
 
     path = workspace.resolve_image_path(project, ref)
     try:
-        with open_image(path) as src:
+        with open_image_ref(path, ref) as src:
             d = ref.display
             planes = [src.get_plane(min(d.t, ref.metadata.shape.T - 1),
                                     min(d.z, ref.metadata.shape.Z - 1), cs.index)

@@ -27,7 +27,7 @@ import numpy as np
 from PySide6.QtCore import QSize, Qt, QTimer
 from PySide6.QtGui import QAction, QBrush, QColor, QFont, QImage, QPixmap
 from PySide6.QtWidgets import (
-    QApplication, QFileDialog, QFrame, QGraphicsPixmapItem, QGraphicsScene, QHBoxLayout,
+    QApplication, QDialog, QFileDialog, QFrame, QGraphicsPixmapItem, QGraphicsScene, QHBoxLayout,
     QInputDialog, QLabel, QMainWindow, QMessageBox, QProgressDialog, QPushButton,
     QScrollArea, QSlider, QSplitter, QTabWidget, QToolBar, QVBoxLayout, QWidget,
 )
@@ -36,10 +36,11 @@ from .. import __version__
 from ..display import apply_orientation, auto_window, compute_saturation_stats, render_composite
 from ..integrity import build_integrity_report, write_integrity_html, write_integrity_json
 from ..models import ChannelSettings, ImageRef, Project, SaturationStats
-from ..readers import IMPORT_FILE_FILTER, ImageSource, UnsupportedImageError, open_image
+from ..readers import IMPORT_FILE_FILTER, ImageSource, UnsupportedImageError, open_image_ref
 from ..preferences import load_preferences, save_preferences
 from ..render import PanelRenderer
 from ..storage import (
+    expected_sha256,
     HashCancelled, RefStatus, RelinkError, Workspace, add_image_to_dataset, check_image,
     common_prefix_change, copy_into_project, create_dataset, log_operation, register_image,
     relink_by_prefix, relink_image, remove_image_from_dataset, rename_dataset,
@@ -124,6 +125,8 @@ class MainWindow(QMainWindow):
         self.home.new_project_requested.connect(self.new_project)
         self.home.open_project_requested.connect(self._open_from_home)
         self.home.archive_requested.connect(self._archive_from_home)
+        self.home.export_archive_requested.connect(self.export_archive_dialog)
+        self.home.import_archive_requested.connect(self.import_archive_dialog)
         self.home.figure_requested.connect(self.show_figure)
         self.home.new_figure_requested.connect(self._new_figure_from_home)
         self.tabs.addTab(self.home, "Home")
@@ -419,6 +422,87 @@ class MainWindow(QMainWindow):
         if self.project is not None:
             self.tabs.setCurrentWidget(self.library_tab)
 
+    # ============================================================ .pcarchive
+    def _progress(self, title: str, text: str):
+        """(progress(done, total), cancelled(), dialog) for long archive I/O."""
+        dlg = QProgressDialog(text, "Cancel", 0, 1000, self)
+        dlg.setWindowTitle(title)
+        dlg.setWindowModality(Qt.WindowModal)
+        dlg.setMinimumDuration(400)
+
+        def progress(done: int, total: int) -> None:
+            dlg.setValue(int(1000 * done / total) if total else 1000)
+            QApplication.processEvents()
+        return progress, dlg.wasCanceled, dlg
+
+    def export_archive(self, path, level: str = "light", include_exports: bool = False,
+                       include_report: bool = False, allow_modified: bool = False):
+        """Archive the open project; one log entry, then save. Returns the
+        ArchiveResult, or None (refused / cancelled, nothing written)."""
+        from ..archive import ArchiveCancelled, ArchiveError, export_archive
+        if self.project is None:
+            return None
+        self.flush_pending()
+        self.figures_tab.flush()
+        progress, cancelled, dlg = self._progress("Export archive", f"Writing {Path(path).name}…")
+        try:
+            result = export_archive(self.ws, self.project, path, level, include_exports,
+                                    include_report, allow_modified, progress, cancelled)
+        except ArchiveCancelled:
+            self.statusBar().showMessage("Archive cancelled (nothing written)", 5000)
+            return None
+        except (ArchiveError, OSError) as exc:
+            QMessageBox.warning(self, "Export archive", f"Archive refused:\n\n{exc}")
+            return None
+        finally:
+            dlg.close()
+        self.save()
+        self.statusBar().showMessage(
+            f"Archive written ({result.level}, {result.n_members} members): {result.path.name}"
+            + (f" — {'; '.join(result.warnings)}" if result.warnings else ""), 8000)
+        return result
+
+    def export_archive_dialog(self) -> None:
+        if self.project is None:
+            return
+        from .archive_dialog import ArchiveDialog
+        dlg = ArchiveDialog(self)
+        if dlg.exec() != QDialog.Accepted:
+            return
+        default = str(Path.home() / f"{self.project.project.name}_{dlg.level()}.pcarchive")
+        path, _ = QFileDialog.getSaveFileName(self, "Export archive", default,
+                                              "Pycrograph archive (*.pcarchive)")
+        if path:
+            self.export_archive(path, dlg.level(), dlg.include_exports.isChecked(),
+                                dlg.include_report.isChecked())
+
+    def import_archive(self, path):
+        """Verify and import a .pcarchive as a NEW project, then open it."""
+        from ..archive import ArchiveCancelled, ArchiveError, import_archive
+        progress, cancelled, dlg = self._progress("Import archive", f"Verifying {Path(path).name}…")
+        try:
+            result = import_archive(self.ws, path, progress, cancelled)
+        except ArchiveCancelled:
+            self.statusBar().showMessage("Import cancelled (nothing written)", 5000)
+            return None
+        except (ArchiveError, OSError) as exc:
+            QMessageBox.warning(self, "Import archive", f"Archive refused (nothing imported):\n\n{exc}")
+            return None
+        finally:
+            dlg.close()
+        self.open_project_by_id(result.project.project.id)
+        self.home.refresh_requested()
+        self.statusBar().showMessage(
+            f"Imported “{result.project.project.name}” ({result.level} archive, "
+            f"{result.n_members_verified} members verified)", 8000)
+        return result
+
+    def import_archive_dialog(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(self, "Import archive", str(Path.home()),
+                                              "Pycrograph archive (*.pcarchive)")
+        if path:
+            self.import_archive(path)
+
     def _archive_from_home(self, project_id: str, archived: bool) -> None:
         if self.project is not None and self.project.project.id == project_id:
             if archived:
@@ -576,7 +660,7 @@ class MainWindow(QMainWindow):
         if ref.sha256 is None:
             set_image_hash(p, image_id, digest, size, mtime_ns)
             status = RefStatus.OK
-        elif digest == ref.sha256:
+        elif digest == expected_sha256(ref):           # the original, or a light-archive extract
             old = ref.mtime_ns
             ref.size_bytes, ref.mtime_ns = int(size), int(mtime_ns)
             log_operation(p, "image.verify", target_type="image", target_id=image_id,
@@ -771,7 +855,7 @@ class MainWindow(QMainWindow):
         self._update_info_label()
         path = self.ws.resolve_image_path(self.project, ref)
         try:
-            self.source = open_image(path)
+            self.source = open_image_ref(path, ref)
         except FileNotFoundError:
             self._show_placeholder(f"Source file not found:\n{path}\n\nRight-click the image → Relink….")
             return
