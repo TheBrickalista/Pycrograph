@@ -34,7 +34,7 @@ from PySide6.QtWidgets import (
 
 from .. import __version__
 from ..display import apply_orientation, auto_window, compute_saturation_stats, render_composite
-from ..integrity import build_integrity_report, write_integrity_json
+from ..integrity import build_integrity_report, write_integrity_html, write_integrity_json
 from ..models import ChannelSettings, ImageRef, Project, SaturationStats
 from ..readers import IMPORT_FILE_FILTER, ImageSource, UnsupportedImageError, open_image
 from ..preferences import load_preferences, save_preferences
@@ -133,7 +133,7 @@ class MainWindow(QMainWindow):
 
         self.figures_tab = FiguresTab(self.renderer, save=self.save,
                                       before_gesture=self.flush_pending, prefs=self.prefs,
-                                      save_prefs=self.save_prefs)
+                                      save_prefs=self.save_prefs, workspace=self.ws)
         self.figures_tab.status_message.connect(lambda m: self.statusBar().showMessage(m, 4000))
         self.figures_tab.image_defaults_changed.connect(self._on_image_defaults_changed)
         self.tabs.addTab(self.figures_tab, "Figures")
@@ -976,13 +976,15 @@ class MainWindow(QMainWindow):
         try:
             report = build_integrity_report(self.ws, self.project, verify_hashes=verify)
             write_integrity_json(report, path)
+            html_path = write_integrity_html(report, Path(path).with_suffix(".html"))
             log_operation(self.project, "export.integrity_report", target_type="export",
-                          target_id=self.project.project.id, new_value=path,
+                          target_id=self.project.project.id,
+                          new_value={"json": path, "html": str(html_path)},
                           note=f"log chain: {report['log_chain']['status']}; hashes re-verified: {verify}")
             self.save()
         finally:
             QApplication.restoreOverrideCursor()
-        self.statusBar().showMessage(f"Integrity report written: {path}", 6000)
+        self.statusBar().showMessage(f"Integrity report written: {path} (+ .html)", 6000)
 
     def show_about(self) -> None:
         self.tabs.setCurrentWidget(self.about_tab)
