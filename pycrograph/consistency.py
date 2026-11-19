@@ -37,6 +37,9 @@ columns_of) and each lock group.
 |               |          | off in the export                                              |
 | scalebar_fit  | warning  | scale bar longer than the panel, or unavailable (reason)       |
 | labels        | warning  | label tokens that cannot be resolved (drawn as "?")            |
+| inset_group   | warning  | a linked inset group is not one inset repeated: page size,     |
+|               |          | orientation, magnification, region (or µm size) differ, or a  |
+|               |          | pair cannot be linked (defensive: the editor keeps them equal) |
 | light_extract | info     | the panel reads a light-archive extract, not the original raw  |
 |               |          | file (only the archived planes / region exist)                 |
 
@@ -254,6 +257,11 @@ def check_figure(project: Project, figure: Figure,
             if sat:
                 issues.append(Issue("warning", "saturation", f"{label}: saturated pixels in the "
                                     "crop — " + "; ".join(sat), (p.id,)))
+
+    # ---- replicated insets (defensive)
+    from .insets import group_invariant_issues
+    for msg, ids in group_invariant_issues(figure, images):
+        issues.append(Issue("warning", "inset_group", msg, tuple(ids)))
 
     # ---- sources (once per image)
     for image_id in dict.fromkeys(p.image_id for p in figure.panels):

@@ -80,6 +80,20 @@ class InsetsInspector(QScrollArea):
                                    "panel at 2× magnification, linked to this one")
         self.create_btn.clicked.connect(self.tab.start_create_inset)
         lay.addWidget(self.create_btn)
+        self.replicate_btn = QPushButton("Replicate to…")
+        self.replicate_btn.setToolTip("The same inset on the other selected panels, or on every "
+                                      "panel of the parent's split / lock group")
+        self.replicate_btn.clicked.connect(lambda: self.tab.replicate_inset_dialog())
+        lay.addWidget(self.replicate_btn)
+        grow = QHBoxLayout()
+        self.group_label = QLabel("")
+        self.group_label.setWordWrap(True)
+        self.group_label.setStyleSheet("color: #374151; font-size: 11px;")
+        self.unlink_btn = QPushButton("Unlink from group")
+        self.unlink_btn.clicked.connect(self.tab.unlink_from_group)
+        grow.addWidget(self.group_label, 1)
+        grow.addWidget(self.unlink_btn)
+        lay.addLayout(grow)
         self.style_box = QWidget()
         form = QFormLayout(self.style_box)
         form.setContentsMargins(0, 0, 0, 0)
@@ -183,7 +197,12 @@ class InsetsInspector(QScrollArea):
         fig = self.tab.current_figure()
         P = self.panels
         single = len(P) == 1
-        self.create_btn.setEnabled(single and self.tab.ref(P[0]) is not None)
+        plain = [p for p in P if p.inset_of is None]
+        self.create_btn.setEnabled(bool(plain) and all(self.tab.ref(p) is not None for p in plain))
+        self.create_btn.setText("Create inset…" if len(plain) <= 1 else
+                                f"Create inset… (then offer it on {len(plain) - 1} other panel(s))")
+        src, sets = self.tab.replicate_candidates()
+        self.replicate_btn.setEnabled(src is not None and any(sets.values()))
         self.draw_btn.setEnabled(single)
         insets = [p for p in P if p.inset_of and p.inset_style]
         lines = []
@@ -200,6 +219,20 @@ class InsetsInspector(QScrollArea):
                          f"{ref.filename if ref else 'a missing panel'}")
         self.inset_info.setText("\n".join(dict.fromkeys(lines)) or "No inset in the selection.")
         self.style_box.setEnabled(bool(insets))
+        groups = sorted({p.inset_style.region_group for p in insets if p.inset_style.region_group})
+        if groups and fig is not None:
+            parts = []
+            for g in groups:
+                members = I.group_members(fig, g)
+                links = sorted({m.inset_style.region_link for m in members})
+                how = " / ".join("same region" if lk == "region" else "same size" for lk in links)
+                parts.append(f"Linked group {g}: {len(members)} insets, {how}. Size, "
+                             "orientation and region apply to all of them; Unlink to change "
+                             "one alone.")
+            self.group_label.setText("\n".join(parts))
+        else:
+            self.group_label.setText("Not linked to other insets." if insets else "")
+        self.unlink_btn.setEnabled(bool(groups))
         st = insets[0].inset_style if insets else InsetStyle()
         self.inset_color.set_color(st.color)
         self.inset_width.blockSignals(True)

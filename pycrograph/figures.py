@@ -321,6 +321,7 @@ class FigureEditor:
     @contextmanager
     def gesture(self, operation: str, label: str, note: Optional[str] = None) -> Iterator[None]:
         self.flush()
+        self._order = []
         before = snapshot(self.figure)
         try:
             yield
@@ -329,8 +330,41 @@ class FigureEditor:
             raise
         self._commit(before, operation, label, note)
 
+    def _sync_groups(self, before: Snapshot) -> list[str]:
+        """Linked inset groups are one inset repeated. For each group with a
+        member whose crop, page size or orientation changed since `before`,
+        the first changed member in this gesture's panel order (then figure
+        order) is the source; the others take its size, orientation and
+        region (insets.sync_group). Idempotent; run at every commit and on
+        every live tick. Returns the members (other than the sources) that
+        now differ from `before`, i.e. those that followed."""
+        b = {d["id"]: d for d in before.get("panels", [])}
+        order = list(dict.fromkeys(getattr(self, "_order", []) + [p.id for p in self.figure.panels]))
+        rank = {pid: i for i, pid in enumerate(order)}
+        groups: dict[str, list[Panel]] = {}
+        for p in self.figure.panels:
+            g = p.inset_style.region_group if p.inset_style is not None else None
+            if g:
+                groups.setdefault(g, []).append(p)
+        out: list[str] = []
+        for members in groups.values():
+            if len(members) < 2:
+                continue
+            changed = [m for m in members if m.id in b and I.geometry_key(b[m.id])
+                       != I.geometry_key(m.model_dump(mode="json"))]
+            if not changed:
+                continue
+            source = min(changed, key=lambda m: rank.get(m.id, len(rank)))
+            I.sync_group(self.figure, source, self.project.images)
+            out += [m.id for m in members if m is not source and m.id in b
+                    and I.geometry_key(b[m.id]) != I.geometry_key(m.model_dump(mode="json"))]
+        return list(dict.fromkeys(out))
+
     def _commit(self, before: Snapshot, operation: str, label: str,
                 note: Optional[str] = None) -> int:
+        # One place for every path (edit, resize, layout tools, rotation,
+        # paste viewport...): linked inset groups stay one inset repeated.
+        self.last_region = self._sync_groups(before)
         n = log_figure_changes(self.project, self.figure, before, operation, note)
         if n:
             self.history.push(before, snapshot(self.figure), label)
@@ -362,11 +396,14 @@ class FigureEditor:
             self.flush()
         if self._live is None:
             self._live = (snapshot(self.figure), operation, label, key)
+            self._order = []
         panel_ids = list(panel_ids)
+        self._order += [i for i in panel_ids if i not in self._order]
         pre = {pid: locked_state(p) for pid in panel_ids
                if (p := self.figure.panel(pid)) is not None and p.lock_group}
         self.last_propagated: list[str] = []      # changed through a lock group
         self.last_synced: list[str] = []          # insets that followed their parent
+        self.last_region: list[str] = []          # linked-group members updated
         applied = skipped = 0
         try:
             for pid in panel_ids:
@@ -390,6 +427,9 @@ class FigureEditor:
                     for iid in I.sync_insets(self.figure, parent, self.project.images):
                         if iid not in panel_ids and iid not in self.last_synced:
                             self.last_synced.append(iid)
+            # Linked inset groups follow live (same gesture; the commit runs the
+            # same idempotent sync again).
+            self.last_region = [i for i in self._sync_groups(self._live[0]) if i not in panel_ids]
         except BaseException:
             before = self._live[0]
             self._live = None
@@ -426,6 +466,7 @@ class FigureEditor:
                 if p.inset_of in ids:
                     p.inset_of = None
                     p.inset_style = None
+            I.clear_singleton_groups(self.figure)         # a deleted member leaves its group
         return before - len(self.figure.panels)
 
     def set_geometry(self, changes: dict[str, Geometry], operation: str = "figure.panel.move",
@@ -434,6 +475,7 @@ class FigureEditor:
         change extends/shrinks the crop at constant scale (design §2.4)."""
         changed = 0
         with self.gesture(operation, label):
+            self._order = list(changes)
             for pid, (x, y, w, h) in changes.items():
                 p = self.figure.panel(pid)
                 if p is None:
@@ -460,6 +502,7 @@ class FigureEditor:
         refs = {p.image_id: self.project.images[p.image_id] for p in panels
                 if p.image_id in self.project.images}
         with self.gesture(operation, label):
+            self._order = [p.id for p in panels]
             return fn(panels, refs)
 
     def set_page(self, page: PageSetup) -> bool:
@@ -814,7 +857,12 @@ def set_border(panel: Panel, ref: ImageRef, fields: dict[str, Any]) -> bool:
     return True
 
 
-def copy_panels(panels: Iterable[Panel]) -> list[dict]:
+def copy_panels(panels: Iterable[Panel], figure: Optional[Figure] = None) -> list[dict]:
+    """Clipboard dumps. With `figure`, an inset region group is kept only if
+    every member is copied (insets.copy_groups_state)."""
+    panels = list(panels)
+    if figure is not None:
+        return I.copy_groups_state(panels, figure)
     return [p.model_dump(mode="json") for p in panels]
 
 
@@ -822,7 +870,8 @@ def pasted_panels(copied: list[dict], offset_mm: float = 5.0) -> list[Panel]:
     """New panels from copied ones: new ids, shifted by offset_mm, labels,
     shapes and every setting kept; not in any lock group. A parent copied
     with its insets keeps the link within the pasted set; an inset copied
-    without its parent becomes an ordinary panel."""
+    without its parent becomes an ordinary panel. A whole region group
+    copied becomes a new group; a partial one leaves the group."""
     out, old_to_new = [], {}
     for d in copied:
         p = Panel.model_validate(d)
@@ -831,7 +880,7 @@ def pasted_panels(copied: list[dict], offset_mm: float = 5.0) -> list[Panel]:
         out.append(p.model_copy(update={
             "id": nid, "x_mm": round(p.x_mm + offset_mm, 6),
             "y_mm": round(p.y_mm + offset_mm, 6), "lock_group": None}))
-    I.remap_links(out, old_to_new)
+    I.remap_links(out, old_to_new, new_id)
     return out
 
 

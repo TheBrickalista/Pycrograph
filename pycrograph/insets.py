@@ -21,14 +21,43 @@ its own colour (rectangle, number and the matching border on the inset).
 With follow_parent_tz / follow_parent_rendering the inset takes the parent's
 T/Z/projection / channel settings whenever the parent is edited
 (`sync_insets`, called by FigureEditor.edit).
+
+Replicated insets (`replicate_inset`) put the same inset on other panels —
+the channels of a split row, other conditions — and can stay linked in a
+``region_group``. A linked group is ONE inset repeated: its members share
+the panel size (width_mm, height_mm) and orientation (rotation, flips) —
+only their position on the page is their own — and
+
+- ``region_link == "region"``: every member shows the same raw-pixel
+  rectangle. Only between images of compatible geometry (`compatibility`:
+  the same image, or the same size and pixel size); it assumes the images
+  are registered (same field), which the stage positions can confirm or not.
+- ``region_link == "size"``: every member shows a region of the same
+  physical size (µm), each at its own position (images of another pixel
+  size, or other fields).
+
+`sync_group` (called by FigureEditor at every gesture commit and live tick,
+whatever changed the member: an edit, a resize, a layout tool, a rotation)
+applies one member's size, orientation and region to the others, exactly:
+"region" members get the identical raw rectangle, "size" members a
+rectangle of exactly the same µm size around their own centre, at the same
+physical magnification (µm per page-mm). A pair that cannot be linked (a
+"region" pair across incompatible geometry, or calibrated vs uncalibrated)
+is skipped, never forced; `group_invariant_issues` reports it.
 """
 
 from __future__ import annotations
 
-from typing import Optional
+import math
+from typing import Callable, Iterable, Literal, Optional, Sequence
 
 from . import viewport as V
-from .models import Figure, ImageRef, InsetStyle, Panel, ZProjection
+from .layout import UNIT_TO_UM
+from .models import Crop, Figure, ImageRef, InsetStyle, Panel, ZProjection
+
+Compatibility = Literal["same_image", "same_geometry", "different"]
+LinkMode = Literal["region", "size"]
+PIXEL_SIZE_TOL = 1e-6
 
 INSET_COLORS = ("#FFFF00", "#00FFFF", "#FF00FF", "#00FF00", "#FF8000", "#FFFFFF")
 DEFAULT_MAGNIFICATION = 2.0
@@ -55,15 +84,17 @@ def _overlaps(a: Rect, b: Rect) -> bool:
     return a[0] < b[0] + b[2] and b[0] < a[0] + a[2] and a[1] < b[1] + b[3] and b[1] < a[1] + a[3]
 
 
-def place(figure: Figure, parent: Panel, w: float, h: float, gap_mm: float) -> tuple[float, float]:
+def place(figure: Figure, parent: Panel, w: float, h: float, gap_mm: float,
+          extra: Sequence[Panel] = ()) -> tuple[float, float]:
     """Right of the parent, moved down past panels it would overlap, kept on
-    the page (shifted left if needed), snapped to the page grid."""
+    the page (shifted left if needed), snapped to the page grid. `extra` =
+    panels not yet in the figure that must be avoided too."""
     page_w, page_h = figure.page.size_mm
     x = parent.x_mm + parent.width_mm + gap_mm
     if x + w > page_w:
         x = max(0.0, page_w - w)
     y = parent.y_mm
-    others = [(p.x_mm, p.y_mm, p.width_mm, p.height_mm) for p in figure.panels
+    others = [(p.x_mm, p.y_mm, p.width_mm, p.height_mm) for p in list(figure.panels) + list(extra)
               if p.page == parent.page and p.id != parent.id]
     moved = True
     while moved:
@@ -150,12 +181,329 @@ def sync_insets(figure: Figure, parent: Panel, images: dict[str, ImageRef]) -> l
     return changed
 
 
-def remap_links(panels: list[Panel], old_to_new: dict[str, str]) -> None:
+def remap_links(panels: list[Panel], old_to_new: dict[str, str],
+                new_group_id: Optional[Callable[[], str]] = None) -> None:
     """After copying a set of panels: an inset whose parent was copied too
-    points at the copy; one whose parent was not becomes an ordinary panel."""
+    points at the copy; one whose parent was not becomes an ordinary panel.
+    Region groups surviving in the copies (see copy_groups_state) get a NEW
+    group id, so copies never join the originals' group; a group left with
+    one member is cleared."""
     for p in panels:
         if p.inset_of in old_to_new:
             p.inset_of = old_to_new[p.inset_of]
         elif p.inset_of is not None:
             p.inset_of = None
             p.inset_style = None
+    renamed: dict[str, str] = {}
+    counts: dict[str, int] = {}
+    for p in panels:
+        g = p.inset_style.region_group if p.inset_style is not None else None
+        if g:
+            counts[g] = counts.get(g, 0) + 1
+    for p in panels:
+        g = p.inset_style.region_group if p.inset_style is not None else None
+        if not g:
+            continue
+        if counts[g] < 2:
+            p.inset_style = p.inset_style.model_copy(update={"region_group": None})
+            continue
+        if g not in renamed:
+            renamed[g] = f"region:{new_group_id()}" if new_group_id else f"{g}-copy"
+        p.inset_style = p.inset_style.model_copy(update={"region_group": renamed[g]})
+
+
+# ================================================================ replicate
+def um_per_px(ref: ImageRef) -> Optional[tuple[float, float]]:
+    """(x, y) µm per raw pixel; None if uncalibrated or in an unknown unit."""
+    cal = ref.metadata.calibration
+    k = UNIT_TO_UM.get(cal.unit)
+    if not cal.is_calibrated or k is None:
+        return None
+    return cal.pixel_size_x * k, cal.pixel_size_y * k
+
+
+def _close(a: float, b: float) -> bool:
+    return abs(a - b) <= PIXEL_SIZE_TOL * max(1.0, abs(a), abs(b))
+
+
+def compatibility(src_ref: ImageRef, target_ref: ImageRef) -> Compatibility:
+    """same_image: the same file. same_geometry: same X / Y size and the same
+    pixel size (µm, within 1e-6; two uncalibrated images count as equal).
+    different: anything else — only a "size" link is possible."""
+    if src_ref.id == target_ref.id:
+        return "same_image"
+    a, b = src_ref.metadata.shape, target_ref.metadata.shape
+    if (a.X, a.Y) != (b.X, b.Y):
+        return "different"
+    pa, pb = um_per_px(src_ref), um_per_px(target_ref)
+    if pa is None and pb is None:
+        return "same_geometry"
+    if pa is None or pb is None:
+        return "different"
+    return "same_geometry" if _close(pa[0], pb[0]) and _close(pa[1], pb[1]) else "different"
+
+
+def stage_position(ref: ImageRef) -> Optional[tuple[float, float]]:
+    raw = ref.metadata.raw
+    try:
+        return float(raw["stage-position-x"]), float(raw["stage-position-y"])
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def stage_relation(src_ref: ImageRef, target_ref: ImageRef) -> Literal["equal", "differ", "unknown"]:
+    """MetaMorph stage-position-x/y: do the two images show the same field?"""
+    if src_ref.id == target_ref.id:
+        return "equal"
+    a, b = stage_position(src_ref), stage_position(target_ref)
+    if a is None or b is None:
+        return "unknown"
+    return "equal" if _close(a[0], b[0]) and _close(a[1], b[1]) else "differ"
+
+
+def size_comparable(a: ImageRef, b: ImageRef) -> bool:
+    """A physical size can be matched only if both images are calibrated, or
+    both are not (then in pixels)."""
+    return (um_per_px(a) is None) == (um_per_px(b) is None)
+
+
+def _scale(ref: ImageRef) -> tuple[float, float]:
+    """Physical units per pixel: µm when calibrated, else pixels."""
+    return um_per_px(ref) or (1.0, 1.0)
+
+
+def _crop_rect(panel: Panel, ref: ImageRef) -> Rect:
+    s = ref.metadata.shape
+    c = V.effective_crop(panel, s.X, s.Y)
+    return c.x, c.y, c.w, c.h
+
+
+def _clamp_centre(c: float, size: float, limit: float) -> float:
+    if size >= limit:
+        return limit / 2.0
+    return min(max(c, size / 2.0), limit - size / 2.0)
+
+
+def size_rect(src_rect: Rect, src_ref: ImageRef, target_ref: ImageRef,
+              centre: Optional[tuple[float, float]] = None) -> Rect:
+    """A rectangle of the same physical size in the target's pixels, centred
+    at `centre` (default: the same fractional position as the source),
+    clamped inside the image."""
+    x, y, w, h = src_rect
+    ss, ts = _scale(src_ref), _scale(target_ref)
+    tw, th = w * ss[0] / ts[0], h * ss[1] / ts[1]
+    s, t = src_ref.metadata.shape, target_ref.metadata.shape
+    if centre is None:
+        centre = ((x + w / 2.0) / s.X * t.X, (y + h / 2.0) / s.Y * t.Y)
+    cx = _clamp_centre(centre[0], tw, t.X)
+    cy = _clamp_centre(centre[1], th, t.Y)
+    return cx - tw / 2.0, cy - th / 2.0, tw, th
+
+
+def _fit_rect(panel: Panel, ref: ImageRef, rect: Rect) -> None:
+    """Show `rect` (raw px) in the panel without changing its page size."""
+    x, y, w, h = rect
+    ow, oh = V.oriented_wh(w, h, panel.rotation_deg)
+    V.set_view(panel, x + w / 2.0, y + h / 2.0, max(ow / panel.width_mm, oh / panel.height_mm))
+
+
+def physical_per_mm(panel: Panel, ref: ImageRef) -> float:
+    """Physical units (µm, or px if uncalibrated) per page-mm along X."""
+    s = ref.metadata.shape
+    return V.px_per_mm(panel, s.X, s.Y) * _scale(ref)[0]
+
+
+def replicate_inset(figure: Figure, src_inset: Panel, targets: Iterable[Panel],
+                    images: dict[str, ImageRef], mode: Optional[LinkMode] = None,
+                    link: bool = True, new_id: Callable[[], str] = lambda: "",
+                    gap_mm: float = 2.0) -> list[Panel]:
+    """The same inset on each target panel (the source's parent and panels
+    that are themselves insets are skipped). Region: "region" = the source's
+    raw rectangle (only for compatible geometry; incompatible targets fall
+    back to "size"), "size" = the same physical size at the same fractional
+    centre, clamped (skipped when only one of the two images is calibrated:
+    µm cannot be matched to pixels). Default: "region" if compatible, else "size" (per
+    target). Same physical magnification, colour, width and flags as the
+    source; placed at the source's offset from its parent, or by place() if
+    that overlaps. With `link`, source and copies share a region_group (the
+    source's if it has one) and each copy's region_link is the mode it got.
+    The copies are returned, not added to the figure."""
+    parent = figure.panel(src_inset.inset_of or "")
+    src_ref = images[src_inset.image_id]
+    if parent is None or src_inset.inset_style is None:
+        raise ValueError("source is not an inset")
+    st = src_inset.inset_style
+    src_rect = _crop_rect(src_inset, src_ref)
+    src_phys = physical_per_mm(src_inset, src_ref)
+    dx, dy = src_inset.x_mm - parent.x_mm, src_inset.y_mm - parent.y_mm
+    group = st.region_group or (f"region:{new_id()}" if link else None)
+    out: list[Panel] = []
+    for tgt in targets:
+        if tgt.id in (parent.id, src_inset.id) or tgt.inset_of is not None:
+            continue
+        ref = images.get(tgt.image_id)
+        if ref is None:
+            continue
+        comp = compatibility(src_ref, ref)
+        m: LinkMode = mode or ("region" if comp != "different" else "size")
+        if m == "region" and comp == "different":
+            m = "size"                                   # never a raw rect across geometries
+        if m == "size" and not size_comparable(src_ref, ref):
+            continue                                     # µm vs pixels: no physical size to match
+        rect = src_rect if m == "region" else size_rect(src_rect, src_ref, ref)
+        mag = physical_per_mm(tgt, ref) / src_phys
+        inset = create_inset(figure, tgt, ref, rect, new_id(), magnification=mag, gap_mm=gap_mm)
+        inset.inset_style = st.model_copy(update={
+            "region_group": group if link else None, "region_link": m})
+        # One inset repeated: the source's page size and orientation, and the
+        # region exactly (same raw rect, or the same µm size).
+        _match_geometry(inset, src_inset)
+        inset.crop = Crop(x=round(rect[0], 6), y=round(rect[1], 6), w=round(rect[2], 6),
+                          h=round(rect[3], 6))
+        sync_inset(inset, tgt, ref)
+        x, y = tgt.x_mm + dx, tgt.y_mm + dy
+        page_w, page_h = figure.page.size_mm
+        box = (x, y, inset.width_mm, inset.height_mm)
+        clash = (x < 0 or y < 0 or x + inset.width_mm > page_w or y + inset.height_mm > page_h
+                 or any(_overlaps(box, (q.x_mm, q.y_mm, q.width_mm, q.height_mm))
+                        for q in list(figure.panels) + out if q.page == tgt.page))
+        inset.x_mm, inset.y_mm = (place(figure, tgt, inset.width_mm, inset.height_mm, gap_mm, out)
+                                  if clash else (round(x, 6), round(y, 6)))
+        out.append(inset)
+    if link and out and st.region_group is None:
+        src_inset.inset_style = st.model_copy(update={
+            "region_group": group, "region_link": mode or "region"})
+    return out
+
+
+def group_members(figure: Figure, group: Optional[str]) -> list[Panel]:
+    return [p for p in figure.panels if group and p.inset_style is not None
+            and p.inset_style.region_group == group]
+
+
+def pair_mode(a: Panel, b: Panel, a_ref: ImageRef, b_ref: ImageRef) -> Optional[LinkMode]:
+    """How an edit of `a` reaches `b`: "region" only if both are "region"
+    members and the geometry is compatible; "size" if either is a "size"
+    member; None = never (a "region" link across incompatible geometry)."""
+    la, lb = a.inset_style.region_link, b.inset_style.region_link
+    if la == "region" and lb == "region":
+        return "region" if compatibility(a_ref, b_ref) != "different" else None
+    return "size" if size_comparable(a_ref, b_ref) else None
+
+
+GEOMETRY_KEYS = ("width_mm", "height_mm", "rotation_deg", "flip_horizontal", "flip_vertical")
+
+
+def _match_geometry(member: Panel, source: Panel) -> None:
+    for k in GEOMETRY_KEYS:
+        setattr(member, k, getattr(source, k))
+
+
+def sync_group(figure: Figure, source: Panel, images: dict[str, ImageRef]) -> list[str]:
+    """Make every other member of `source`'s group the same inset: its page
+    size and orientation, then its region ("region": the identical raw
+    rectangle; "size": exactly the same µm size around the member's own
+    centre, clamped). Unlinkable pairs (pair_mode None) are left untouched.
+    Returns the ids of the members changed."""
+    st = source.inset_style
+    if st is None or not st.region_group:
+        return []
+    a_ref = images.get(source.image_id)
+    if a_ref is None:
+        return []
+    rect = _crop_rect(source, a_ref)
+    out = []
+    for m in group_members(figure, st.region_group):
+        b_ref = images.get(m.image_id)
+        if m.id == source.id or b_ref is None:
+            continue
+        mode = pair_mode(source, m, a_ref, b_ref)
+        if mode is None:
+            continue
+        before = m.model_dump()
+        _match_geometry(m, source)
+        if mode == "region":
+            new = rect
+        else:
+            sx, sy, sw, sh = _crop_rect(m, b_ref)
+            new = size_rect(rect, a_ref, b_ref, centre=(sx + sw / 2.0, sy + sh / 2.0))
+        m.crop = Crop(x=round(new[0], 6), y=round(new[1], 6), w=round(new[2], 6), h=round(new[3], 6))
+        if m.model_dump() != before:
+            out.append(m.id)
+    return out
+
+
+def geometry_key(d: dict) -> tuple:
+    """What a group shares, from a panel dump: crop + size + orientation."""
+    return (d.get("crop"),) + tuple(d.get(k) for k in GEOMETRY_KEYS)
+
+
+def clear_singleton_groups(figure: Figure) -> list[str]:
+    """A group of one is no group: clear it. Returns the ids cleared."""
+    counts: dict[str, int] = {}
+    for p in figure.panels:
+        if p.inset_style is not None and p.inset_style.region_group:
+            counts[p.inset_style.region_group] = counts.get(p.inset_style.region_group, 0) + 1
+    out = []
+    for p in figure.panels:
+        g = p.inset_style.region_group if p.inset_style is not None else None
+        if g and counts[g] < 2:
+            p.inset_style = p.inset_style.model_copy(update={"region_group": None})
+            out.append(p.id)
+    return out
+
+
+def copy_groups_state(panels: Sequence[Panel], figure: Figure) -> list[dict]:
+    """Dumps for the clipboard: a region group is kept only if ALL its
+    members are copied (a partial copy leaves the group)."""
+    ids = {p.id for p in panels}
+    out = []
+    for p in panels:
+        d = p.model_dump(mode="json")
+        g = p.inset_style.region_group if p.inset_style is not None else None
+        if g and not all(m.id in ids for m in group_members(figure, g)):
+            d["inset_style"]["region_group"] = None
+        out.append(d)
+    return out
+
+
+def group_invariant_issues(figure: Figure, images: dict[str, ImageRef]) -> list[tuple[str, list[str]]]:
+    """(message, panel ids) for every linked group that is not one inset
+    repeated: members differing in page size or orientation, in physical
+    magnification (rel 1e-6), "region" members with different raw
+    rectangles, "size" members with different µm sizes, or pairs that
+    cannot be linked at all (e.g. after Replace image)."""
+    out = []
+    groups = dict.fromkeys(p.inset_style.region_group for p in figure.panels
+                           if p.inset_style is not None and p.inset_style.region_group)
+    for g in groups:
+        members = [m for m in group_members(figure, g) if m.image_id in images]
+        if len(members) < 2:
+            continue
+        ref0, m0 = images[members[0].image_id], members[0]
+        problems: list[str] = []
+        for m in members[1:]:
+            ref = images[m.image_id]
+            if any(not math.isclose(getattr(m, k), getattr(m0, k), rel_tol=1e-6)
+                   if isinstance(getattr(m, k), float) else getattr(m, k) != getattr(m0, k)
+                   for k in GEOMETRY_KEYS):
+                problems.append("panel size or orientation")
+            mode = pair_mode(m0, m, ref0, ref)
+            if mode is None:
+                problems.append("a link that is not possible (geometry or calibration)")
+                continue
+            if not math.isclose(physical_per_mm(m, ref), physical_per_mm(m0, ref0), rel_tol=1e-6):
+                problems.append("magnification")
+            a, b = _crop_rect(m0, ref0), _crop_rect(m, ref)
+            if mode == "region":
+                if any(abs(x - y) > 1e-6 for x, y in zip(a, b)):
+                    problems.append("region")
+            else:
+                sa, sb = _scale(ref0), _scale(ref)
+                if not (math.isclose(a[2] * sa[0], b[2] * sb[0], rel_tol=1e-6)
+                        and math.isclose(a[3] * sa[1], b[3] * sb[1], rel_tol=1e-6)):
+                    problems.append("region size")
+        if problems:
+            out.append((f"inset group {g}: members differ in "
+                        + ", ".join(dict.fromkeys(problems)), [m.id for m in members]))
+    return out

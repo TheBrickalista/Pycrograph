@@ -25,3 +25,42 @@ match (rectangle, number and border on the inset). With *Follow the parent's
 T / Z* and *Follow the parent's channels*, the inset updates with every edit of
 the parent. Deleting a parent turns its insets into ordinary panels; copying a
 parent with its insets keeps the link in the pasted copies.
+
+## Replicated insets
+
+*Replicate to…* puts the same inset on other panels — the channels of a split
+row, the conditions of a grid — at the same physical magnification (µm per
+page-mm), colour, width and follow flags, at the same offset from each parent
+when there is room. For each target Pycrograph checks the geometry against the
+source image:
+
+| Compatibility | Meaning | Possible link |
+|---|---|---|
+| same image | the same file (e.g. split channels) | same region or same size |
+| same geometry | same width × height and pixel size (within 10⁻⁶ µm) | same region or same size |
+| different | another size or pixel size | same size only |
+
+- **Same region** shows the *same raw-pixel rectangle* in every image. Across
+  separate files this assumes the images are **registered** (the same field):
+  the dialog shows whether the MetaMorph stage positions agree, differ or are
+  unknown, and warns unless they agree.
+- **Same size** shows a region of the *same physical size* (µm) in every image,
+  centred at the same relative position and kept inside the image; each inset
+  can then be moved on its own.
+
+With **Keep linked** the insets form a group, and a group is **one inset
+repeated**: all members have the same page size and orientation (rotation,
+flips) and show the same region — the same rectangle of pixels for "same
+region" members, exactly the same µm size around each one's own centre (at the
+same magnification) for "same size" members. Only each inset's position on the
+page is its own. Whatever changes one member — panning or zooming in the
+Preview tab, dragging its rectangle on the parent, resizing it on the canvas,
+*Same width / height*, *Align magnification*, rotating or flipping it,
+pasting a viewport — changes the others in the same step; the status bar says
+"applies to the N linked insets". If several members change in one step, the
+first one acted on wins. A raw rectangle is never copied between images of
+different geometry. The whole change is one undo step with one log entry per
+inset; the consistency check warns if a group ever diverges. *Unlink from
+group*, *Make ordinary panel* or deleting an inset take it out of the group (a
+group left with one inset disappears). Copying a whole group gives the copies a
+new group of their own; copying only part of it leaves the copies unlinked.

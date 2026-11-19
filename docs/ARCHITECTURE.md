@@ -27,7 +27,7 @@ hash-chained operation log, and a PySide6 `QGraphicsView` UI.
 | `consistency.py` | Pre-export check (§2.9), pure: per row / column / lock group and per panel; `Issue(severity, code, message, panel_ids)` |
 | `export.py` | Figure export (PDF, SVG, TIFF, PNG) from the shared scene, source-data export (OME-TIFF), source verification, metadata embedding, one log entry per export |
 | `provenance.py` | Export sidecar (pure): per panel source + hash, crop as rendered, orientation, channels, flags, resolved labels, scale-bar basis, insets, shapes |
-| `insets.py` | Dynamic insets (pure): create (2× magnification, placement), rectangle on the parent derived from the inset's crop, edit it back, follow-parent sync, links on copy/paste |
+| `insets.py` | Dynamic insets (pure): create (2× magnification, placement), rectangle on the parent derived from the inset's crop, edit it back, follow-parent sync, links on copy/paste; replication (compatibility, stage positions, region / size links; `sync_group` keeps a linked group one inset repeated, `group_invariant_issues` checks it) |
 | `labels.py` | Label tokens resolved at render time ([channels], [time…], [z…], [zoom], [image], [dataset], [tags], [kv:Key]); unresolved → "?" + reported |
 | `selfcheck.py` | `--selfcheck`: offline check of an installed / packaged app (metadata, resources, Qt plugins, render + export), run by the release builds |
 | `scalebar.py` | Scale bar length on the page from the calibration and the viewport scale; reason when unavailable; non-isotropic pixels |
@@ -44,6 +44,7 @@ hash-chained operation log, and a PySide6 `QGraphicsView` UI.
 | `ui/archive_dialog.py` | Archive level and optional contents |
 | `ui/export_dialogs.py` | Consistency dialog (click selects panels; "Export anyway") and export settings dialog |
 | `ui/scene_builder.py` | Panel visual + overlay builder shared by canvas and export; `export_scene` (decorations off, native rasters) |
+| `ui/replicate_dialog.py` | Replicate-inset dialog (targets, compatibility, mode, keep linked) |
 | `ui/insets_inspector.py` | Insets & Shapes tab: create inset, inset style and follow flags, shapes (draw, list, style, delete, copy/paste) |
 | `ui/labels_inspector.py` | Labels tab: labels, scale bar and border of all selected panels |
 | `ui/panel_overlays.py` | Labels, scale bar, border, inset rectangles / borders / numbers and shapes as vector child items of each panel (page mm), tagged by kind for the export; interactive inset rectangles and shapes |

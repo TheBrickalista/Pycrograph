@@ -28,8 +28,36 @@ All notable changes to Pycrograph are documented here. The format follows
   `pull_request_target`, release gating, signing secrets, entitlements),
   version file with pre-releases, selfcheck.
 
+- Replicated insets: *Replicate to…* (Insets & Shapes tab) puts the selected
+  inset on the other selected panels or on every panel of its parent's split /
+  lock group; *Create inset* with several panels selected offers the same.
+  Per target, the geometry is checked (same image, same geometry, different;
+  MetaMorph stage positions equal / differ / unknown): *Same region* (same
+  raw rectangle, compatible geometry only, warns that it assumes registered
+  images) or *Same size* (same µm size, same relative centre, clamped).
+  *Keep linked* puts the insets in a region group: editing one's region
+  updates the others in the same undo step, one log entry per inset. Group
+  shown in the inspector, *Unlink from group*; delete / detach / copy-paste
+  keep groups consistent.
+
+### Fixed
+- Linked inset groups could diverge silently: resizing a member on the canvas
+  or with `set_geometry`, the layout tools (same width / height, align
+  magnification) and rotating or flipping a member left the others behind,
+  and a rotation pushed its raw rectangle into siblings of the old
+  orientation. A linked group is now one inset repeated (shared page size,
+  rotation, flips and region; positions per member), enforced at every
+  gesture commit and live tick whatever the path, in the same undo step;
+  the first member acted on wins. Replicated copies take the source's size
+  and orientation. The consistency check's group warning now covers every
+  divergence (`insets.group_invariant_issues`).
+
 ### Changed
 - `twine` added to the `dev` extra (`uv.lock` updated).
+- Project format version 3: `InsetStyle.region_group` / `region_link`
+  (older projects are migrated on load, logged as `project.migrate`).
+- Create inset can be started with several panels selected (drawn on the
+  panel pressed).
 
 ## [0.2.0] - 2026-11-19
 

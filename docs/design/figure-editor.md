@@ -152,6 +152,21 @@ panel in one click (OMERO's most-used shortcut for condition labels on a row).
   "unlinked" (a flag), so a time-lapse inset follows the parent's time point.
 - Inset style: `InsetStyle(color, width_pt, show_on_parent, border_on_inset)`.
 - Several insets per parent are allowed; rectangles are numbered/coloured to match borders.
+- **Replicate** (`insets.replicate_inset`): the same inset on other panels, linked in a
+  `region_group` with `region_link` "region" (same raw rectangle; only between images of
+  compatible geometry — same image, or same X/Y and pixel size within 1e-6; assumes
+  registered images, stage positions reported) or "size" (same µm size, own position, same
+  relative centre, clamped). Default per target: region if compatible, else size.
+  **A linked group is one inset repeated**: members share page size (`width_mm`,
+  `height_mm`), rotation and flips — only the position is per member — so "region" members
+  show the identical raw rectangle and "size" members exactly the same µm size at the same
+  physical magnification. Copies take the source's size and orientation. `FigureEditor`
+  enforces it at every gesture commit and live tick (`_sync_groups` → `insets.sync_group`),
+  whatever the path (edit, resize, layout tools, rotation, paste viewport): the first changed
+  member in the gesture's panel order is the source. Same undo step, one log entry per member.
+  A "region" pair across incompatible geometry (or calibrated vs not) is never forced;
+  `insets.group_invariant_issues` (tests, consistency check) reports any divergence. Groups survive whole copies (new id), not partial
+  ones; a group of one is cleared. Format version 3 (migration fills the two fields).
 
 ### 2.8 Layout tools
 
