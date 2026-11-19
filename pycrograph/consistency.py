@@ -37,6 +37,8 @@ columns_of) and each lock group.
 |               |          | off in the export                                              |
 | scalebar_fit  | warning  | scale bar longer than the panel, or unavailable (reason)       |
 | labels        | warning  | label tokens that cannot be resolved (drawn as "?")            |
+| light_extract | info     | the panel reads a light-archive extract, not the original raw  |
+|               |          | file (only the archived planes / region exist)                 |
 
 Saturation needs pixels: pass `crop_plane(panel, ref, channel)` (e.g.
 PanelRenderer.crop_plane); without it that rule is skipped.
@@ -192,6 +194,9 @@ def check_figure(project: Project, figure: Figure,
         if ref is None:
             issues.append(Issue("error", "source", f"{label}: image not in the project", (p.id,)))
             continue
+        if ref.extract is not None:
+            issues.append(Issue("info", "light_extract", f"{label}: panel uses a light-archive "
+                                "extract, not the original raw file", (p.id,)))
         nonlinear = [c.index + 1 for c in p.channels if c.visible and abs(c.gamma - 1.0) > 1e-9]
         if nonlinear:
             issues.append(Issue("info", "nonlinear", f"{label}: non-linear display (gamma ≠ 1) "

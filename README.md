@@ -6,9 +6,10 @@ Pycrograph is the imaging sister of [PysternBlot](https://github.com/TheBrickali
 (Western blot figures). It keeps what OMERO.figure does well — figures re-rendered
 from raw data with recorded display settings — without a server.
 
-> **Status: pre-alpha (0.1.0).** Library, MetaMorph readers and the per-channel
-> display pipeline work. The figure canvas, exports and archives come next
-> (see [Roadmap](Roadmap.md)).
+> **Status: alpha (0.2.0).** Library, MetaMorph readers, the per-channel
+> display pipeline, the figure editor (layout, labels, scale bars, insets,
+> shapes), consistency check, provenance-tracked export and `.pcarchive`
+> archives work (see [Roadmap](Roadmap.md)).
 
 ## Principles
 

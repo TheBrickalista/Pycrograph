@@ -34,7 +34,7 @@ import numpy as np
 
 from .display import apply_orientation, make_thumbnail, render_composite
 from .models import Crop, ImageRef, Panel
-from .readers import ImageSource, open_image
+from .readers import ImageSource, open_image_ref
 
 
 class RenderError(RuntimeError):
@@ -92,7 +92,7 @@ class PanelRenderer:
             entry[1].close()
             del self._sources[ref.id]
         try:
-            src = open_image(path)
+            src = open_image_ref(path, ref)
         except FileNotFoundError as exc:
             raise RenderError(f"source file not found: {path}") from exc
         except (OSError, ValueError) as exc:

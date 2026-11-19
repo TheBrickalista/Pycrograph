@@ -285,7 +285,7 @@ Bump `PROJECT_FORMAT_VERSION` to 2 with a migration (`Figure.page` → `PageSetu
    rendering are reported (`figures.channel_mismatches`, reused by the step-6 check).
 6. **Export** (SVG/PDF/TIFF + sidecar JSON + info page) and **consistency check**, then
    archives.
-   *Done (archives still to come).* One scene builder (`FigureScene.populate`) for canvas
+   *Done; archives done in 0.2.0 (`archive.py`, see ARCHITECTURE).* One scene builder (`FigureScene.populate`) for canvas
    and export; the export scene has decorations off and native-resolution rasters. PDF
    rasters are written lossless through `QPainter.LosslessImageRendering` (Qt otherwise
    JPEG-encodes them; the test parses the PDF). Raster exports resample nearest-neighbour by

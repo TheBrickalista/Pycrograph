@@ -28,7 +28,9 @@ ROLE = Qt.UserRole
 class HomeTab(QWidget):
     new_project_requested = Signal()
     open_project_requested = Signal(str)          # project id
-    archive_requested = Signal(str, bool)         # project id, archived
+    archive_requested = Signal(str, bool)         # project id, archived (soft-hide)
+    export_archive_requested = Signal()           # .pcarchive of the open project
+    import_archive_requested = Signal()
     figure_requested = Signal(str)                # figure id (open project)
     new_figure_requested = Signal()
 
@@ -53,7 +55,16 @@ class HomeTab(QWidget):
         self.open_btn.clicked.connect(self._open_selected)
         self.archive_btn = QPushButton("Archive")
         self.archive_btn.clicked.connect(self._archive_selected)
-        for b in (self.new_btn, self.open_btn, self.archive_btn):
+        self.export_archive_btn = QPushButton("Export archive…")
+        self.export_archive_btn.setToolTip("Write the open project as a .pcarchive (light: what the "
+                                           "figures use; complete: every raw file)")
+        self.export_archive_btn.clicked.connect(self.export_archive_requested)
+        self.export_archive_btn.setEnabled(False)
+        self.import_archive_btn = QPushButton("Import archive…")
+        self.import_archive_btn.setToolTip("Verify a .pcarchive and import it as a new project")
+        self.import_archive_btn.clicked.connect(self.import_archive_requested)
+        for b in (self.new_btn, self.open_btn, self.archive_btn, self.export_archive_btn,
+                  self.import_archive_btn):
             top.addWidget(b)
         lay.addLayout(top)
 
@@ -107,6 +118,7 @@ class HomeTab(QWidget):
         self._update_buttons()
 
     def set_open_project(self, project: Optional[Project]) -> None:
+        self.export_archive_btn.setEnabled(project is not None)
         self.figures.clear()
         self.new_fig_btn.setEnabled(project is not None)
         if project is None:

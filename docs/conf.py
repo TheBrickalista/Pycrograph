@@ -6,7 +6,7 @@
 project = "Pycrograph"
 copyright = "2026, Etienne Boulter"
 author = "Etienne Boulter"
-release = "0.1.0"
+release = "0.2.0"
 
 # -- General configuration ---------------------------------------------------
 

@@ -26,6 +26,7 @@ from . import __version__
 from .jsonsafe import dumps_strict
 from .logchain import verify_log_chain
 from .models import Project
+from .provenance import extract_block
 from .storage import RefStatus, Workspace, check_image, sha256_file, utc_now
 
 
@@ -39,7 +40,10 @@ def _image_record(workspace: Workspace, project: Project, ref, verify_hashes: bo
         flags.append("nonlinear_gamma")
     if ref.metadata.dtype == "uint8":
         flags.append("8bit_source")
+    if ref.extract is not None:
+        flags.append("light_extract")
     m = ref.metadata
+    verified_now = bool(verify_hashes and ref.sha256 is not None)
     return {
         "id": ref.id,
         "filename": ref.filename,
@@ -48,7 +52,11 @@ def _image_record(workspace: Workspace, project: Project, ref, verify_hashes: bo
         "stored_in_project": ref.stored_relpath is not None,
         "sha256": ref.sha256,
         "source_status": status.value,
-        "hash_verified_now": bool(verify_hashes and ref.sha256 is not None),
+        # For an extract only the extract can be re-hashed: never the absent original.
+        "hash_verified_now": verified_now and ref.extract is None,
+        "original_present": ref.extract is None,
+        "extract": (extract_block(ref, verified_now and status == RefStatus.OK)
+                    if ref.extract is not None else None),
         "size_bytes": ref.size_bytes,
         "reader": ref.reader,
         "reader_version": ref.reader_version,
@@ -94,11 +102,35 @@ def _exports(project: Project) -> list[dict[str, Any]]:
     return out
 
 
+def _archives(project: Project) -> list[dict[str, Any]]:
+    """Archives made from this project (file re-checked now) and the archive
+    this project was imported from."""
+    out = []
+    for e in project.operation_log:
+        v = e.new_value if isinstance(e.new_value, dict) else {}
+        if e.operation == "export.archive":
+            path = Path(v.get("path") or "")
+            status = "missing" if not path.is_file() else (
+                "ok" if sha256_file(path) == v.get("archive_sha256") else "modified")
+            out.append({"timestamp_utc": e.timestamp_utc, "direction": "export", "level": v.get("level"),
+                        "path": str(path), "archive_sha256": v.get("archive_sha256"),
+                        "manifest_sha256": v.get("manifest_sha256"),
+                        "members": v.get("n_members"), "status": status, "note": e.note})
+        elif e.operation == "project.import_archive":
+            out.append({"timestamp_utc": e.timestamp_utc, "direction": "import", "level": v.get("level"),
+                        "path": v.get("archive_path"), "archive_sha256": v.get("archive_sha256"),
+                        "manifest_sha256": v.get("manifest_sha256"),
+                        "members": v.get("members_verified"), "status": "verified at import",
+                        "note": f"original project {v.get('original_project_id')}"})
+    return out
+
+
 def build_integrity_report(workspace: Workspace, project: Project,
                            verify_hashes: bool = False) -> dict[str, Any]:
     chain = verify_log_chain(project)
     images = [_image_record(workspace, project, r, verify_hashes) for r in project.images.values()]
     exports = _exports(project)
+    archives = _archives(project)
     return {
         "report_type": "pycrograph.integrity",
         "report_version": 1,
@@ -109,13 +141,17 @@ def build_integrity_report(workspace: Workspace, project: Project,
         "n_operations": len(project.operation_log),
         "images": images,
         "exports": exports,
+        "archives": archives,
         "summary": {
             "n_images": len(images),
             "n_sources_not_ok": sum(1 for i in images if i["source_status"] != "ok"),
             "n_nonlinear_images": sum(1 for i in images if i["nonlinear_channels"]),
             "n_8bit_sources": sum(1 for i in images if i["dtype"] == "uint8"),
+            "n_light_extracts": sum(1 for i in images if i["extract"]),
             "n_exports": len(exports),
             "n_export_files_not_ok": sum(1 for x in exports for f in x["files"] if f["status"] != "ok"),
+            "n_archives": len(archives),
+            "n_archives_not_ok": sum(1 for a in archives if a["status"] in ("missing", "modified")),
         },
     }
 
@@ -145,9 +181,20 @@ def write_integrity_html(report: dict[str, Any], path: str | Path) -> Path:
         scale = (f"{cal['pixel_size_x']:g} × {cal['pixel_size_y']:g} {esc(cal['unit'])}/px "
                  f"({esc(cal['source'])})" if cal.get("pixel_size_x") else "not calibrated")
         flags = ", ".join(im["flags"])
+        ex = im.get("extract")
+        if ex:
+            sha_cell = (f"<td {_WARN}>Light-archive extract — original raw file NOT present.<br>"
+                        f"Extract: <code>{esc(ex['extract_sha256'])}</code> "
+                        f"{'(verified)' if ex['extract_sha256_verified_at_export'] else '(not re-hashed)'}"
+                        f"<br>Original (recorded, not verified): <code>{esc(ex['source_sha256'])}</code>"
+                        f"<br>Region x {ex['origin_px']['x']}, y {ex['origin_px']['y']}, "
+                        f"{ex['size_px']['width']}×{ex['size_px']['height']} px; "
+                        f"T {esc(ex['archived_t'])} Z {esc(ex['archived_z'])} C {esc(ex['archived_c'])}</td>")
+        else:
+            sha_cell = f"<td><code>{esc(im['sha256'])}</code></td>"
         img_rows.append(
             f"<tr><td>{esc(im['filename'])}<br><code>{esc(im['path'])}</code></td>"
-            f"<td><code>{esc(im['sha256'])}</code></td>{status_cell}"
+            f"{sha_cell}{status_cell}"
             f"<td>{esc(im['reader'])} {esc(im['reader_version'])}</td>"
             f"<td>{'×'.join(map(str, im['shape_tzcyx']))} · {esc(im['dtype'])} "
             f"({im['bit_depth']}-bit)</td><td>{scale}</td>"
@@ -163,6 +210,15 @@ def write_integrity_html(report: dict[str, Any], path: str | Path) -> Path:
             f"<tr><td>{esc(x['timestamp_utc'])}</td><td>{esc(x['operation'])}</td>"
             f"<td>{esc(x['format'])}</td><td>{files}</td>"
             f"<td {_WARN if warn else ''}>{warn}</td><td>{esc(x['note'])}</td></tr>")
+    arc_rows = []
+    for a in report.get("archives", []):
+        bad = a["status"] in ("missing", "modified")
+        arc_rows.append(
+            f"<tr><td>{esc(a['timestamp_utc'])}</td><td>{esc(a['direction'])}</td>"
+            f"<td>{esc(a['level'])}</td><td>{esc(Path(a['path'] or '').name)}<br>"
+            f"<code>{esc(a['archive_sha256'])}</code></td><td><code>{esc(a['manifest_sha256'])}</code></td>"
+            f"<td>{esc(a['members'])}</td><td {_BAD if bad else ''}>{esc(a['status'])}</td>"
+            f"<td>{esc(a['note'])}</td></tr>")
     chain_cell = (f"<span {_BAD}>{esc(chain.get('status'))}</span>"
                   if chain.get("status") != "ok" else esc(chain.get("status")))
     doc = f"""<!doctype html>
@@ -203,6 +259,14 @@ code {{ font-size: 11px; word-break: break-all; }}
 <th>Consistency warnings overridden</th><th>Note</th></tr></thead>
 <tbody>
 {"".join(exp_rows) or '<tr><td colspan="6">No export yet.</td></tr>'}
+</tbody>
+</table>
+<h2>Archives</h2>
+<table>
+<thead><tr><th>Time (UTC)</th><th>Direction</th><th>Level</th><th>Archive (SHA-256)</th>
+<th>Manifest SHA-256</th><th>Members verified</th><th>Status</th><th>Note</th></tr></thead>
+<tbody>
+{"".join(arc_rows) or '<tr><td colspan="8">No archive yet.</td></tr>'}
 </tbody>
 </table>
 </body>

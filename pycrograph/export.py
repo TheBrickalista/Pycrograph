@@ -59,7 +59,9 @@ from .labels import channel_name
 from .layout import UNIT_TO_UM
 from .logchain import verify_log_chain
 from .models import Figure, Project
-from .provenance import SOURCES_TYPE, SIDECAR_VERSION, figure_sidecar, rendered_crop, sidecar_name
+from .provenance import (
+    SIDECAR_VERSION, SOURCES_TYPE, extract_block, figure_sidecar, rendered_crop, sidecar_name,
+)
 from .render import PanelRenderer, RenderError
 from .storage import RefStatus, Workspace, check_image, log_operation, sha256_file, utc_now
 from .ui.scene_builder import export_scene, rgb_to_qimage
@@ -123,21 +125,28 @@ def verify_sources(workspace: Workspace, project: Project, image_ids: list[str],
                              verify_hash=verify_hashes and ref.sha256 is not None)
         rec: dict[str, Any] = {"resolved_path": str(path), "source_status": status.value,
                                "sha256_verified_at_export": None}
+        extract = ref.extract is not None
+        if extract:
+            # Only the extract file can be checked; the original is absent and its
+            # SHA-256 must never be reported as verified.
+            rec.update({"original_present": False, "extract_sha256_verified_at_export": None})
+            warnings.append(f"{ref.filename}: light-archive extract, original raw file not present")
         if status == RefStatus.MISSING:
             raise ExportRefused(f"{ref.filename}: source file missing ({path})")
         if status == RefStatus.MODIFIED:
-            msg = f"{ref.filename}: source MODIFIED since import (SHA-256 differs)"
+            what = "light-archive extract" if extract else "source"
+            msg = f"{ref.filename}: {what} MODIFIED since import (SHA-256 differs)"
             if not allow_modified:
                 raise ExportRefused(msg)
             warnings.append(msg + " — exported anyway")
-            rec["sha256_at_export"] = sha256_file(path)
+            rec["extract_sha256_at_export" if extract else "sha256_at_export"] = sha256_file(path)
         elif status == RefStatus.PENDING_HASH:
             rec["sha256_at_export"] = sha256_file(path)
             warnings.append(f"{ref.filename}: no SHA-256 had been recorded; computed at export")
         elif status == RefStatus.CHANGED:
             warnings.append(f"{ref.filename}: size/date changed since import, not re-hashed")
         elif verify_hashes:
-            rec["sha256_verified_at_export"] = True
+            rec["extract_sha256_verified_at_export" if extract else "sha256_verified_at_export"] = True
         records[iid] = rec
     return records, warnings
 
@@ -305,8 +314,15 @@ def _info_page(project: Project, figure: Figure, renderer: PanelRenderer, sideca
                 f"{ch['label_name']} {ch['lut']} {ch['black']}–{ch['white']}"
                 + (f" γ{ch['gamma']:g}" if abs(ch["gamma"] - 1) > 1e-9 else "")
                 + (" inv" if ch["invert"] else "") for ch in rec["channels"] if ch["visible"])
-            lines = [f"Panel {rec['index']}: {im['filename']}",
-                     f"SHA-256 {im['sha256_recorded'] or im.get('sha256_at_export') or '—'}",
+            if "extract" in rec:
+                ex = rec["extract"]
+                sha_line = (f"LIGHT-ARCHIVE EXTRACT (original not present) — extract SHA-256 "
+                            f"{ex['extract_sha256']}"
+                            + (" verified" if ex["extract_sha256_verified_at_export"] else "")
+                            + f"; original SHA-256 (recorded, not verified) {ex['source_sha256']}")
+            else:
+                sha_line = f"SHA-256 {im['sha256_recorded'] or im.get('sha256_at_export') or '—'}"
+            lines = [f"Panel {rec['index']}: {im['filename']}", sha_line,
                      f"T {rec['t'] + 1} · " + (f"max Z {proj['z_start'] + 1}–{proj['z_end'] + 1}"
                                                if proj else f"Z {rec['z'] + 1}")
                      + f" · crop x {c['x0']}–{c['x1']}, y {c['y0']}–{c['y1']} px"
@@ -418,6 +434,8 @@ def export_sources(workspace: Workspace, project: Project, figure: Figure, rende
             "file": out.name, "panel_index": k, "panel_id": p.id, "image_id": ref.id,
             "image": {"filename": ref.filename, "path": ref.path, "sha256_recorded": ref.sha256,
                       **sources[ref.id]},
+            **({"extract": extract_block(ref, sources[ref.id].get("extract_sha256_verified_at_export")),
+                "light_extract": True} if ref.extract is not None else {}),
             "t": p.t, "z": None if proj else p.z,
             "z_projection": {"method": "max", **proj.model_dump()} if proj else None,
             "crop_px": rendered_crop(p, ref), "channels": [
