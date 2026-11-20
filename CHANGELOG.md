@@ -448,6 +448,18 @@ how-to guides, and the signed release pipeline.
 - `twine` added to the `dev` extra (`uv.lock` updated).
 - CodeQL analysis is skipped on private repositories.
 
+#### Credits and release plan
+
+- Authors: Etienne Boulter and Chloé C. Féral (Université Côte d'Azur, CNRS,
+  Inserm, IRCAN, Nice), as for PysternBlot. They appear in `CITATION.cff`
+  (with ORCIDs, affiliations and a `references:` entry for PysternBlot),
+  `pyproject.toml`, the docs and CONTRIBUTING. The Home and About tabs and the
+  README show "Copyright © 2026 Etienne Boulter, Chloé C. Féral — Université
+  Côte d'Azur, CNRS, Inserm, IRCAN" (`pycrograph/credits.py`).
+- Release plan: 0.x releases are betas, published as GitHub pre-releases and
+  each archived on Zenodo with a DOI. 1.0.0 will be the first stable release,
+  also on PyPI. "Development Status :: 4 - Beta".
+
 ### Fixed
 
 - Screenshot smoke tests (`test_inset_screenshots.py`,

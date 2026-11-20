@@ -10,7 +10,8 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "GPL-3.0-only" }
 authors = [
-  { name = "Etienne Boulter" }
+  { name = "Etienne Boulter" },
+  { name = "Chloé C. Féral" }
 ]
 keywords = [
   "microscopy",

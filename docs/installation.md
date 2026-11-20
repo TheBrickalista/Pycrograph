@@ -3,8 +3,9 @@
 Pycrograph runs on macOS and Windows (and anywhere Python and PySide6 run).
 
 Pycrograph is in **beta**: 0.x releases are published on GitHub as
-*pre-releases*. Version **1.0.0** will be the first stable release, also
-published on PyPI and archived on Zenodo with a DOI.
+*pre-releases*, each archived on Zenodo with a DOI (cite the version you
+used). Version **1.0.0** will be the first stable release, also published on
+PyPI.
 
 | Method | Best for | Python needed? |
 |---|---|---|

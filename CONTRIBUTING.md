@@ -1,6 +1,6 @@
 # Contributing to Pycrograph
 
-Pycrograph is maintained by Etienne Boulter (IRCAN). Bug reports, feature
+Pycrograph is maintained by Etienne Boulter and Chloé C. Féral (IRCAN). Bug reports, feature
 suggestions and pull requests are welcome; for anything large, please open an
 issue first.
 

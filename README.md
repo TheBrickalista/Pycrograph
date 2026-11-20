@@ -10,8 +10,9 @@ Pycrograph is the imaging sister of [PysternBlot](https://github.com/TheBrickali
 (Western blot figures). It keeps what OMERO.figure does well — figures re-rendered
 from raw data with recorded display settings — without a server.
 
-> **Status: beta (0.2.0).** 0.x releases are betas published as GitHub
-> pre-releases; 1.0.0 will be the first stable release (PyPI, Zenodo DOI).
+> **Status: beta (0.2.0).** 0.x releases are betas: GitHub pre-releases,
+> each archived on Zenodo with a DOI. 1.0.0 will be the first stable
+> release, also published on PyPI.
 > Library, MetaMorph readers, the per-channel display pipeline, the figure
 > editor (layout, labels, scale bars, insets, shapes), consistency check,
 > provenance-tracked export and `.pcarchive` archives work (see
@@ -53,7 +54,8 @@ from raw data with recorded display settings — without a server.
 
 macOS versions before 15 are not supported (PySide6 6.11's binding modules
 require macOS 15). Betas (all 0.x versions, e.g. `0.2.0`, `0.2.0b1`) are
-published as GitHub pre-releases with signed apps, not on PyPI. Full documentation:
+published as GitHub pre-releases with signed apps and archived on Zenodo, not
+on PyPI. Full documentation:
 <https://pycrograph.readthedocs.io>.
 
 ### Development
@@ -78,4 +80,5 @@ PYCROGRAPH_SAMPLE_TIFF="/Volumes/LaCie/…/Nuc_ER_ER.tif" uv run pytest -m sampl
 
 ## License
 
-GPL-3.0-only. © 2026 Etienne Boulter (IRCAN — Inserm, CNRS, Université Côte d'Azur).
+GPL-3.0-only. Copyright © 2026 Etienne Boulter, Chloé C. Féral — Université Côte d'Azur, CNRS,
+Inserm, IRCAN.

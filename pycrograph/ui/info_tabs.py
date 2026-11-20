@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
 )
 
 from .. import __version__
+from ..credits import CITATION, copyright_html, to_entities
 from ..models import PagePreset
 from ..preferences import Preferences, builtin_presets
 
@@ -192,12 +193,12 @@ class AboutTab(QWidget):
 
 
 def about_html() -> str:
-    cite = (f"Boulter E. Pycrograph (version {__version__}) [Computer software]. "
+    cite = (f"{CITATION}. Pycrograph (version {__version__}) [Computer software]. "
             "https://github.com/TheBrickalista/Pycrograph")
     return (f"<h2>Pycrograph {html.escape(__version__)}</h2>"
             "<p>Publication figures from fluorescence microscopy images — non-destructive, "
             "provenance-tracked. Sister app of PysternBlot.</p>"
-            "<p>Etienne Boulter (IRCAN, Inserm/CNRS/Université Côte d'Azur)</p>"
+            f"<p>{copyright_html()}</p>"
             "<p><b>Licence</b>: GNU General Public License v3.0 only (GPL-3.0-only).</p>"
-            f"<p><b>Citation</b>: {html.escape(cite)}<br>"
+            f"<p><b>Citation</b>: {to_entities(cite)}<br>"
             "<small>See CITATION.cff in the repository.</small></p>")

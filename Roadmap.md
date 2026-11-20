@@ -3,10 +3,13 @@
 Indicative order; each step keeps the hard rules (figures only, raw pixels
 untouched, local only, provenance).
 
-**Release plan.** 0.x releases are **betas**, published as GitHub
-pre-releases with the signed macOS app and the Windows executable (no PyPI
-upload). **1.0.0** will be the first stable release: published on PyPI and
-archived on Zenodo with a DOI.
+**Release plan.**
+
+- **0.x betas** (from 0.2.0): GitHub pre-releases with the signed macOS app
+  and the Windows executable, each archived on Zenodo with a DOI (a dated,
+  citable record of every release). No PyPI upload.
+- **1.0.0**: first stable release, archived on Zenodo as before and also
+  published on PyPI.
 
 1. **Session 1 — done (0.1.0):** scaffold, MetaMorph TIFF/STK readers, models,
    library with import by reference, per-channel display, hash-chained log.
@@ -30,8 +33,9 @@ archived on Zenodo with a DOI.
 8. **Archives** (PysternBlot `.pbarchive` system): light (OME-TIFF of what the
    figure uses) and complete (raw files).
 9. **MetaMorph `.nd`** sets, then `.czi` / `.nd2` / `.lif` via Java-free `bioio`.
-10. **PyInstaller builds** (macOS 15+ Apple Silicon, Windows) — done for the
-    0.x betas (GitHub pre-releases). **1.0.0 stable:** PyPI and Zenodo DOI.
+10. **PyInstaller builds** (macOS 15+ Apple Silicon, Windows) and Zenodo
+    archiving — done from 0.2.0 (GitHub pre-releases). **1.0.0 stable:** also
+    on PyPI.
 11. **Pypirus hooks** (per-manuscript workspaces).
 
 ## Open decisions

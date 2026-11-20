@@ -6,6 +6,11 @@ authors:
   - family-names: Boulter
     given-names: Etienne
     orcid: "https://orcid.org/0000-0001-6597-9086"
+    affiliation: "Université Côte d'Azur, CNRS, Inserm, IRCAN, Nice, France"
+  - family-names: Féral
+    given-names: Chloé C.
+    orcid: "https://orcid.org/0000-0001-9756-2082"
+    affiliation: "Université Côte d'Azur, CNRS, Inserm, IRCAN, Nice, France"
 repository-code: "https://github.com/TheBrickalista/Pycrograph"
 license: GPL-3.0-only
 version: 0.2.0
@@ -31,3 +36,17 @@ keywords:
   - bioimaging
   - scientific software
   - reproducibility
+references:
+  - type: software
+    title: PysternBlot
+    authors:
+      - family-names: Boulter
+        given-names: Etienne
+        orcid: "https://orcid.org/0000-0001-6597-9086"
+        affiliation: "Université Côte d'Azur, CNRS, Inserm, IRCAN, Nice, France"
+      - family-names: Féral
+        given-names: Chloé C.
+        orcid: "https://orcid.org/0000-0001-9756-2082"
+        affiliation: "Université Côte d'Azur, CNRS, Inserm, IRCAN, Nice, France"
+    doi: 10.5281/zenodo.20185279
+    repository-code: "https://github.com/TheBrickalista/PysternBlot"
