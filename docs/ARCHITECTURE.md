@@ -38,8 +38,9 @@ hash-chained operation log, and a PySide6 `QGraphicsView` UI.
 | `logchain.py` | Hash-chained log — **shared-core** (verbatim from PysternBlot) |
 | `jsonsafe.py` | Strict JSON — **shared-core** (verbatim) |
 | `integrity.py` | Integrity report (JSON + HTML, exports re-checked) — **shared-core** (adapted) |
-| `ui/main_window.py` | Tabs Home · Library · Figures · Preferences · About. Library tab = tree (left) · viewer (centre) · inspector (right); gesture commit |
-| `ui/home_tab.py` | Project list (new / open / archive / restore), figures of the open project |
+| `ui/main_window.py` | Tabs Home · Projects · Library · Figures · Preferences · About (opens on Home). Library tab = tree (left) · viewer (centre) · inspector (right); gesture commit |
+| `ui/home_tab.py` | Start page (PysternBlot style): logo, version, licence, big buttons to the entry points; emits intents only |
+| `ui/projects_tab.py` | Project list (new / open / archive / restore), figures of the open project |
 | `ui/figures_tab.py`, `ui/figure_canvas.py` | Figure selector, page canvas in mm at journal width, panel items (select, rubber band, move, resize handle), undo/redo, live-gesture commit, Preview · Info inspector |
 | `ui/archive_dialog.py` | Archive level and optional contents |
 | `ui/export_dialogs.py` | Consistency dialog (click selects panels; "Export anyway") and export settings dialog |

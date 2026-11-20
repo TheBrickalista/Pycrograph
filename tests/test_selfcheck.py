@@ -7,7 +7,7 @@ from __future__ import annotations
 import pytest
 
 from pycrograph.main import main
-from pycrograph.selfcheck import logo_path, run_selfcheck
+from pycrograph.selfcheck import icon_path, logo_path, run_selfcheck
 
 
 def test_selfcheck_passes_and_writes_report(tmp_path):
@@ -16,6 +16,15 @@ def test_selfcheck_passes_and_writes_report(tmp_path):
     text = out.read_text()
     assert text.rstrip().endswith("selfcheck passed")
     assert "OK   register → render → export" in text and "lossless" in text
+    assert "OK   bundled resources: pycrograph_logo.png, pycrograph_icon.png" in text
+
+
+def test_selfcheck_fails_without_the_icon(tmp_path, monkeypatch):
+    import pycrograph.selfcheck as sc
+    monkeypatch.setattr(sc, "ICON", "missing_icon.png")
+    out = tmp_path / "s.txt"
+    assert run_selfcheck(str(out)) == 1
+    assert "FAIL bundled resources" in out.read_text()
 
 
 def test_selfcheck_fails_loudly(tmp_path, monkeypatch):
@@ -33,7 +42,8 @@ def test_cli_flag_exits_with_code(tmp_path):
     assert exc.value.code == 0 and out.is_file()
 
 
-def test_logo_is_a_1024_png():
+@pytest.mark.parametrize("path", [logo_path, icon_path], ids=["logo", "icon"])
+def test_logo_and_icon_are_1024_pngs(path):
     from PIL import Image
-    with Image.open(logo_path()) as im:
-        assert im.size == (1024, 1024) and im.format == "PNG"
+    with Image.open(path()) as im:
+        assert im.size == (1024, 1024) and im.format == "PNG" and im.mode == "RGBA"

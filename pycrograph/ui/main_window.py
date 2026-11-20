@@ -6,7 +6,8 @@
 # the Free Software Foundation, version 3 of the License.
 
 """
-Main window: top-level tabs Home · Library · Figures · Preferences · About.
+Main window: top-level tabs Home · Projects · Library · Figures · Preferences ·
+About. The app opens on Home (ui/home_tab.py: logo and entry-point buttons).
 
 The Library tab is the session-1 view (tree on the left, single-image viewer
 in the centre, per-channel inspector on the right); settings made there are
@@ -50,6 +51,7 @@ from ..ui_text import plural
 from .channel_controls import ChannelControls
 from .figures_tab import FiguresTab
 from .home_tab import HomeTab
+from .projects_tab import ProjectsTab
 from .info_tabs import AboutTab, PreferencesTab
 from .library_panel import LibraryPanel
 from .workers import HashQueue
@@ -122,15 +124,24 @@ class MainWindow(QMainWindow):
         self.tabs.setDocumentMode(True)
 
         self.home = HomeTab()
-        self.home.set_lister(lambda archived: self.ws.list_projects(include_archived=archived))
         self.home.new_project_requested.connect(self.new_project)
-        self.home.open_project_requested.connect(self._open_from_home)
-        self.home.archive_requested.connect(self._archive_from_home)
-        self.home.export_archive_requested.connect(self.export_archive_dialog)
+        self.home.open_project_requested.connect(lambda: self.tabs.setCurrentWidget(self.projects))
+        self.home.import_images_requested.connect(self._import_from_home)
+        self.home.figures_requested.connect(lambda: self.tabs.setCurrentWidget(self.figures_tab))
         self.home.import_archive_requested.connect(self.import_archive_dialog)
-        self.home.figure_requested.connect(self.show_figure)
-        self.home.new_figure_requested.connect(self._new_figure_from_home)
+        self.home.about_requested.connect(self.show_about)
         self.tabs.addTab(self.home, "Home")
+
+        self.projects = ProjectsTab()
+        self.projects.set_lister(lambda archived: self.ws.list_projects(include_archived=archived))
+        self.projects.new_project_requested.connect(self.new_project)
+        self.projects.open_project_requested.connect(self._open_from_projects)
+        self.projects.archive_requested.connect(self._archive_from_projects)
+        self.projects.export_archive_requested.connect(self.export_archive_dialog)
+        self.projects.import_archive_requested.connect(self.import_archive_dialog)
+        self.projects.figure_requested.connect(self.show_figure)
+        self.projects.new_figure_requested.connect(self._new_figure_from_projects)
+        self.tabs.addTab(self.projects, "Projects")
 
         self.library_tab = self._build_library_tab()
         self.tabs.addTab(self.library_tab, "Library")
@@ -153,16 +164,17 @@ class MainWindow(QMainWindow):
 
         self.tabs.currentChanged.connect(self._on_tab_changed)
         self.setCentralWidget(self.tabs)
-        self.home.refresh_requested()
-        self.home.set_open_project(None)
+        self.projects.refresh_requested()
+        self.projects.set_open_project(None)
+        self.tabs.setCurrentWidget(self.home)
 
     def _on_tab_changed(self, _index: int) -> None:
         self.flush_pending()                    # a gesture never spans two tabs
         self.figures_tab.flush()
         w = self.tabs.currentWidget()
-        if w is self.home:
-            self.home.refresh_requested()
-            self.home.set_open_project(self.project)
+        if w is self.projects:
+            self.projects.refresh_requested()
+            self.projects.set_open_project(self.project)
 
     def _build_library_tab(self) -> QWidget:
         split = QSplitter(Qt.Horizontal)
@@ -265,6 +277,7 @@ class MainWindow(QMainWindow):
 
     def _update_enabled(self) -> None:
         has = self.project is not None
+        self.home.set_project_open(has)
         for a in (self.a_archive, self.a_dataset, self.a_import, self.a_verify, self.a_integrity):
             a.setEnabled(has)
         self.a_add_to_figure.setEnabled(has and self.ref is not None)
@@ -384,7 +397,7 @@ class MainWindow(QMainWindow):
         self.ws.set_project_archived(self.project, True)
         self._close_project()
         self._update_enabled()
-        self.home.refresh_requested()
+        self.projects.refresh_requested()
 
     def _close_project(self) -> None:
         self.flush_pending()
@@ -394,7 +407,8 @@ class MainWindow(QMainWindow):
         self.ref = None
         self._status.clear()
         self.figures_tab.set_project(None)
-        self.home.set_open_project(None)
+        self.projects.set_open_project(None)
+        self.home.set_project_open(False)
         self.library.set_project(None)
         self._rebuild_inspector()
         self._show_placeholder("No project open.")
@@ -403,8 +417,8 @@ class MainWindow(QMainWindow):
         p = self.project
         self.library.set_project(p)
         self.figures_tab.set_project(p)
-        self.home.set_open_project(p)
-        self.home.refresh_requested()
+        self.projects.set_open_project(p)
+        self.projects.refresh_requested()
         self._update_enabled()
         for ref in p.images.values():
             thumb = self.ws.thumbnail_path(ref.id)
@@ -421,7 +435,13 @@ class MainWindow(QMainWindow):
     def save_prefs(self) -> None:
         save_preferences(self.ws.root, self.prefs)
 
-    def _open_from_home(self, project_id: str) -> None:
+    def _import_from_home(self) -> None:
+        """Home → Import Images: the toolbar's import flow, then the Library
+        tab to see what was registered."""
+        if self.import_images():
+            self.tabs.setCurrentWidget(self.library_tab)
+
+    def _open_from_projects(self, project_id: str) -> None:
         if self.project is None or self.project.project.id != project_id:
             self.open_project_by_id(project_id)
         if self.project is not None:
@@ -496,7 +516,7 @@ class MainWindow(QMainWindow):
         finally:
             dlg.close()
         self.open_project_by_id(result.project.project.id)
-        self.home.refresh_requested()
+        self.projects.refresh_requested()
         self.statusBar().showMessage(
             f"Imported “{result.project.project.name}” ({result.level} archive, "
             f"{result.n_members_verified} members verified)", 8000)
@@ -508,13 +528,13 @@ class MainWindow(QMainWindow):
         if path:
             self.import_archive(path)
 
-    def _archive_from_home(self, project_id: str, archived: bool) -> None:
+    def _archive_from_projects(self, project_id: str, archived: bool) -> None:
         if self.project is not None and self.project.project.id == project_id:
             if archived:
                 self.archive_project()
             else:
                 self.ws.set_project_archived(self.project, False)
-            self.home.refresh_requested()
+            self.projects.refresh_requested()
             return
         try:
             other = self.ws.load_project(project_id)
@@ -522,17 +542,17 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Archive project", f"Cannot open project:\n{exc}")
             return
         self.ws.set_project_archived(other, archived)
-        self.home.refresh_requested()
+        self.projects.refresh_requested()
 
     # ============================================================= figures
     def show_figure(self, figure_id: str) -> None:
         self.figures_tab.select_figure(figure_id)
         self.tabs.setCurrentWidget(self.figures_tab)
 
-    def _new_figure_from_home(self) -> None:
+    def _new_figure_from_projects(self) -> None:
         fig = self.figures_tab.new_figure()
         if fig is not None:
-            self.home.set_open_project(self.project)
+            self.projects.set_open_project(self.project)
             self.show_figure(fig.id)
 
     def add_to_figure(self, image_ids: list[str]) -> list:

@@ -65,7 +65,8 @@ def centre(item) -> QPointF:
 
 def test_tabs(window):
     names = [window.tabs.tabText(i) for i in range(window.tabs.count())]
-    assert names == ["Home", "Library", "Figures", "Preferences", "About"]
+    assert names == ["Home", "Projects", "Library", "Figures", "Preferences", "About"]
+    assert window.tabs.currentWidget() is window.home                 # opens on Home
     window.show_about()
     assert window.tabs.currentWidget() is window.about_tab
     assert "GPL-3.0-only" in window.about_tab.text.text()
@@ -171,9 +172,9 @@ def test_add_move_resize_delete_undo(app, window, workspace, mm_tiff, stk_tc):
     drag(view, QPointF(right, bottom), QPointF(-1, -1))
     assert set(view.selected_ids()) == {pa.id, pb.id}
 
-    # Home lists the figure; saved project equals the window's.
-    window.tabs.setCurrentWidget(window.home)
-    assert window.home.figures.count() == 1
+    # Projects lists the figure; saved project equals the window's.
+    window.tabs.setCurrentWidget(window.projects)
+    assert window.projects.figures.count() == 1
     reloaded = workspace.load_project(p.project.id)
     assert reloaded == proj
     assert verify_log_chain(reloaded).status == "ok"

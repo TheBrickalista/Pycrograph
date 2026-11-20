@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/_static/logo/pycrograph_logo.svg" width="220" alt="Pycrograph logo">
+</p>
+
 # Pycrograph
 
 **Publication figures from fluorescence microscopy images — non-destructive and provenance-tracked.**

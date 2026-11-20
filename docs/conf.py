@@ -27,3 +27,7 @@ exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]
 html_theme = "furo"
 html_title = "Pycrograph"
 html_static_path = ["_static"]
+# The PG mark above the project name in the sidebar (the full logo repeats the
+# name in its wordmark); the same mark as favicon.
+html_logo = "_static/logo/pycrograph_icon.svg"
+html_favicon = "_static/logo/pycrograph_icon.svg"

@@ -24,10 +24,10 @@ def test_archive_round_trip_in_window(app, workspace, mm_tiff, stk_tc, tmp_path,
     w = MainWindow(workspace, auto_open=False)
     w.show()
     try:
-        assert not w.home.export_archive_btn.isEnabled()
+        assert not w.projects.export_archive_btn.isEnabled()
         p = workspace.create_project("Window")
         w.open_project_by_id(p.project.id)
-        assert w.home.export_archive_btn.isEnabled() and w.home.import_archive_btn.isEnabled()
+        assert w.projects.export_archive_btn.isEnabled() and w.projects.import_archive_btn.isEnabled()
         ds = create_dataset(w.project, "A")
         ids = w.import_images(ds.id, [str(mm_tiff), str(stk_tc)])
         assert w.hashq.wait(30000)
@@ -41,7 +41,7 @@ def test_archive_round_trip_in_window(app, workspace, mm_tiff, stk_tc, tmp_path,
         imp = w.import_archive(res.path)
         assert imp is not None and w.project.project.id == imp.project.project.id != p.project.id
         assert len(w.project.figures[0].panels) == 2
-        names = [w.home.table.item(r, 0).text() for r in range(w.home.table.rowCount())]
+        names = [w.projects.table.item(r, 0).text() for r in range(w.projects.table.rowCount())]
         assert names.count("Window") == 2
         # A refused import shows why and imports nothing.
         shown = []

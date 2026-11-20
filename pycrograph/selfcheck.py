@@ -30,12 +30,23 @@ import traceback
 from pathlib import Path
 from typing import Callable, Optional
 
-LOGO = "pycrograph_logo.png"
+LOGO = "pycrograph_logo.png"      # full logo + wordmark (Home tab)
+ICON = "pycrograph_icon.png"      # PG mark only (window / app icon)
+# Both are rendered from docs/_static/logo/*.svg with rsvg: QtSvg cannot draw
+# the logo's clipPath / blur, so the .svg files are never loaded in Qt.
+
+
+def _resource(name: str) -> Path:
+    from importlib.resources import files
+    return Path(str(files("pycrograph.resources").joinpath(name)))
 
 
 def logo_path() -> Path:
-    from importlib.resources import files
-    return Path(str(files("pycrograph.resources").joinpath(LOGO)))
+    return _resource(LOGO)
+
+
+def icon_path() -> Path:
+    return _resource(ICON)
 
 
 def run_selfcheck(out: Optional[str] = None) -> int:
@@ -63,9 +74,11 @@ def run_selfcheck(out: Optional[str] = None) -> int:
         return v
 
     def resources() -> str:
-        p = logo_path()
-        assert p.is_file() and p.stat().st_size > 1000, f"missing {p}"
-        return str(p.name)
+        found = []
+        for p in (logo_path(), icon_path()):
+            assert p.is_file() and p.stat().st_size > 1000, f"missing {p}"
+            found.append(p.name)
+        return ", ".join(found)
 
     def qt() -> str:
         from PySide6 import __version__ as qv

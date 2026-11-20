@@ -61,28 +61,28 @@ jobs:
       - name: Install dependencies
         run: uv sync --locked --extra build
 
-      - name: Generate .icns icon from logo PNG
+      - name: Generate .icns icon from the PG mark (pycrograph_icon.png)
         run: |
           mkdir -p build/pycrograph.iconset
-          sips -z 16 16     pycrograph/resources/pycrograph_logo.png \
+          sips -z 16 16     pycrograph/resources/pycrograph_icon.png \
             --out build/pycrograph.iconset/icon_16x16.png
-          sips -z 32 32     pycrograph/resources/pycrograph_logo.png \
+          sips -z 32 32     pycrograph/resources/pycrograph_icon.png \
             --out build/pycrograph.iconset/icon_16x16@2x.png
-          sips -z 32 32     pycrograph/resources/pycrograph_logo.png \
+          sips -z 32 32     pycrograph/resources/pycrograph_icon.png \
             --out build/pycrograph.iconset/icon_32x32.png
-          sips -z 64 64     pycrograph/resources/pycrograph_logo.png \
+          sips -z 64 64     pycrograph/resources/pycrograph_icon.png \
             --out build/pycrograph.iconset/icon_32x32@2x.png
-          sips -z 128 128   pycrograph/resources/pycrograph_logo.png \
+          sips -z 128 128   pycrograph/resources/pycrograph_icon.png \
             --out build/pycrograph.iconset/icon_128x128.png
-          sips -z 256 256   pycrograph/resources/pycrograph_logo.png \
+          sips -z 256 256   pycrograph/resources/pycrograph_icon.png \
             --out build/pycrograph.iconset/icon_128x128@2x.png
-          sips -z 256 256   pycrograph/resources/pycrograph_logo.png \
+          sips -z 256 256   pycrograph/resources/pycrograph_icon.png \
             --out build/pycrograph.iconset/icon_256x256.png
-          sips -z 512 512   pycrograph/resources/pycrograph_logo.png \
+          sips -z 512 512   pycrograph/resources/pycrograph_icon.png \
             --out build/pycrograph.iconset/icon_256x256@2x.png
-          sips -z 512 512   pycrograph/resources/pycrograph_logo.png \
+          sips -z 512 512   pycrograph/resources/pycrograph_icon.png \
             --out build/pycrograph.iconset/icon_512x512.png
-          sips -z 1024 1024 pycrograph/resources/pycrograph_logo.png \
+          sips -z 1024 1024 pycrograph/resources/pycrograph_icon.png \
             --out build/pycrograph.iconset/icon_512x512@2x.png
           iconutil -c icns build/pycrograph.iconset \
             -o build/pycrograph.icns

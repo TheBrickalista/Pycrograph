@@ -19,6 +19,7 @@ quickstart
 :caption: User Guide
 
 guide/home
+guide/projects
 guide/library
 guide/figures
 guide/insets

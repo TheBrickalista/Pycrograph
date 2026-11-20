@@ -11,6 +11,7 @@ from pycrograph import consistency as C
 from pycrograph import layout as L
 from pycrograph import viewport as V
 from pycrograph.figures import FigureEditor, create_figure, panel_channel
+from pycrograph.insets import create_inset
 from pycrograph.models import Panel, ZProjection
 from pycrograph.storage import create_dataset, register_image
 
@@ -88,6 +89,24 @@ def test_scale_bar_partial_row(env):
     assert "1 of 2" in i.message
     b.scale_bar.visible = True
     assert not codes(run(p, fig), "scalebar")
+
+
+def test_scale_bar_row_inset_beside_its_parent(env):
+    """An inset starts without a bar: beside a parent that shows one, it is
+    not reported. Insets in one row are still compared with each other."""
+    p, fig, ed, (one, two, zs) = env
+    [a] = ed.add_images([one])
+    a.scale_bar.visible = True
+    i1 = create_inset(fig, a, one, (8, 8, 16, 16), "i1")
+    fig.panels.append(i1)
+    assert i1.y_mm == a.y_mm and not i1.scale_bar.visible          # same row, no bar
+    assert not codes(run(p, fig), "scalebar")
+    i2 = create_inset(fig, a, one, (30, 30, 8, 8), "i2")
+    i2.x_mm, i2.y_mm = i1.x_mm + i1.width_mm + 2, i1.y_mm         # a row of two insets
+    fig.panels.append(i2)
+    i2.scale_bar.visible = True
+    [i] = codes(run(p, fig), "scalebar")
+    assert "scale bar on 1 of 2 insets" in i.message and set(i.panel_ids) == {i1.id, i2.id}
 
 
 def test_channel_mismatch_in_lock_group(env):
