@@ -32,9 +32,12 @@ Interaction
 - Draw mode (start_draw): the next left-drag over one panel draws a
   rectangle or a line (create an inset, add a shape); Esc cancels. The
   result is reported in panel-local mm, clamped to the panel.
-- Unselected panels have a faint dashed outline. Outlines, selection,
-  handles, guides and the page border are *decorations*: drawn only while
-  `FigureScene.decorations` is on (the editor), never in an export.
+- Unselected panels get a faint dashed outline only while hovered, when
+  `FigureScene.outline_all` is on, or (`outline_empty`, default on) when
+  their crop extends beyond the image so part of the panel is page
+  background. Outlines, selection, handles, guides and the page border are
+  *decorations*: drawn only while `FigureScene.decorations` is on (the
+  editor), never in an export.
 - Ctrl/Cmd + wheel zooms, middle-drag (or wheel) scrolls, double-click on
   empty space fits the pages.
 
@@ -63,7 +66,7 @@ from .panel_overlays import KIND_KEY
 PAGE_GAP_MM = 10.0
 HANDLE_PX = 9.0
 SELECT_COLOR = QColor("#2563eb")
-OUTLINE_COLOR = QColor(107, 114, 128, 140)      # faint dashed outline, unselected panels
+OUTLINE_COLOR = QColor(107, 114, 128, 140)      # faint dashed outline (PanelItem.shows_outline)
 GUIDE_COLOR = QColor("#db2777")
 GUIDE_PX = 6.0                                  # snap distance to a guide, screen pixels
 CANVAS_BG = QColor("#9ca3af")
@@ -100,6 +103,7 @@ class PanelItem(QGraphicsRectItem):
         self.setFlags(QGraphicsItem.ItemIsSelectable | QGraphicsItem.ItemSendsGeometryChanges)
         self._move: Optional[dict] = None
         self.setAcceptHoverEvents(True)
+        self.hovered = False
         self.setPos(panel.x_mm, panel.y_mm + page_offset_mm(figure, panel.page))
         self.setPen(Qt.NoPen)
 
@@ -153,6 +157,24 @@ class PanelItem(QGraphicsRectItem):
         s = (HANDLE_PX + 2) / max(self._scale(), 1e-6)
         return self.rect().adjusted(-s / 2, -s / 2, s / 2, s / 2)
 
+    def has_empty_area(self) -> bool:
+        """Part of the panel shows page background: the image (where the
+        crop is on it) does not cover the whole panel."""
+        if self._pixmap is None or self._pixmap.isNull() or self._image_rect is None:
+            return False
+        r, img = self.rect(), self.image_rect
+        eps = 1e-3                                   # mm
+        return (img.left() > r.left() + eps or img.top() > r.top() + eps
+                or img.right() < r.right() - eps or img.bottom() < r.bottom() - eps)
+
+    def shows_outline(self) -> bool:
+        """The dashed outline of an unselected panel (editor only)."""
+        scene = self.scene()
+        if not getattr(scene, "decorations", True) or self.isSelected():
+            return False
+        return (self.hovered or bool(getattr(scene, "outline_all", False))
+                or (bool(getattr(scene, "outline_empty", True)) and self.has_empty_area()))
+
     # ---- painting --------------------------------------------------------
     def paint(self, painter: QPainter, option: QStyleOptionGraphicsItem,
               widget: Optional[QWidget] = None) -> None:
@@ -184,7 +206,7 @@ class PanelItem(QGraphicsRectItem):
             painter.setPen(pen)
             painter.drawRect(r)
             painter.fillRect(self._handle_rect(), SELECT_COLOR)
-        else:
+        elif self.shows_outline():
             pen = QPen(OUTLINE_COLOR, 1, Qt.DashLine)
             pen.setCosmetic(True)
             painter.setPen(pen)
@@ -194,6 +216,16 @@ class PanelItem(QGraphicsRectItem):
     def _snap(self, v: float) -> float:
         page = self._figure.page
         return snap_value(v, page.grid_mm) if page.snap else v
+
+    def hoverEnterEvent(self, event) -> None:
+        self.hovered = True
+        self.update()
+        super().hoverEnterEvent(event)
+
+    def hoverLeaveEvent(self, event) -> None:
+        self.hovered = False
+        self.update()
+        super().hoverLeaveEvent(event)
 
     def hoverMoveEvent(self, event) -> None:
         on_handle = self.isSelected() and self._handle_rect().contains(event.pos())
@@ -279,6 +311,8 @@ class FigureScene(QGraphicsScene):
         self._committing = False
         self.decorations = True
         self.smooth_images = True                 # pixmap scaling: canvas smooth, export chosen
+        self.outline_all = False                  # dashed outline on every unselected panel
+        self.outline_empty = True                 # ... on panels showing page background
         # (PanelItem, Panel) -> builds labels / scale bar / border (set by the tab)
         self.overlay_builder: Optional[Callable[[PanelItem, Panel], None]] = None
         # Overlay interaction (ui/panel_overlays.py), set by the tab:
@@ -340,6 +374,11 @@ class FigureScene(QGraphicsScene):
             page.setPen(QPen(QColor("#6b7280"), 0) if on else QPen(Qt.NoPen))
         if not on:
             self.show_guides(None, None, 0)
+        self.update()
+
+    def set_outlines(self, all_panels: bool, empty_area: bool) -> None:
+        """Outline options of unselected panels (editor display only)."""
+        self.outline_all, self.outline_empty = bool(all_panels), bool(empty_area)
         self.update()
 
     def add_guides(self) -> None:

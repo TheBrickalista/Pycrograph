@@ -7,7 +7,8 @@ panels** at once.
 ## Toolbar
 
 - Figure selector, **New Figure…**, **Rename…**, **Add Images…**, **Delete**,
-  **Undo / Redo** (every gesture is one undo step), **Fit**, zoom.
+  **Undo / Redo** (every gesture is one undo step), **Fit**, zoom,
+  **Outlines ▾** (see Canvas below).
 - **Check consistency**, **Export…** (PDF, SVG, TIFF, PNG),
   **Export source data…** (OME-TIFF of the raw crops).
 - Layout row: **Align ▾** (edges, centres, distribute), **Grid** with its gap,
@@ -46,7 +47,21 @@ of other panels and of the page) or to the page grid. The corner handle
 resizes a panel freely (Shift keeps the aspect ratio): the **crop** grows or
 shrinks at constant scale — the image is never stretched. Arrow keys nudge by
 0.1 mm (Shift: 1 mm). Ctrl+C / Ctrl+V on the canvas copy and paste panels.
-Unselected panels have a faint dashed outline, never exported.
+
+**Panel outlines.** Unselected panels have no outline, so the canvas looks
+like the exported figure. A faint dashed outline appears:
+
+- while the mouse is over a panel;
+- on every panel when **Outlines** is on (click the button; off by default);
+- on a panel whose crop extends beyond its image (you zoomed out further
+  than the image), so the part showing page background is still visibly part
+  of the panel. Untick **Panels with empty area** in the **Outlines ▾** menu
+  to hide these too.
+
+These options are remembered for the next session. They only change the
+display: they are not saved in the project, not logged and not undoable, and
+outlines are never exported. The selection frame, resize handle, alignment
+guides and inset rectangles are unchanged.
 
 ## Inspector
 

@@ -7,7 +7,8 @@
 
 """
 Application preferences: journal page presets (data, editable in the
-Preferences tab), the default preset for new figures and the layout gap.
+Preferences tab), the default preset for new figures, the layout gap and
+the Figures canvas outline options (toolbar **Outlines ▾**).
 
 Stored in ``<workspace>/preferences.json`` (local, atomic write). They are
 not project data: editing them is not logged. Applying a preset to a figure
@@ -44,6 +45,10 @@ class Preferences(BaseModel):
     presets: List[PagePreset] = Field(default_factory=builtin_presets)
     default_preset: str = "Nature double column"
     layout_gap_mm: float = Field(DEFAULT_GAP_MM, ge=0)
+    # Figures canvas, editor only (never exported): dashed outline on every
+    # unselected panel, and on panels whose crop leaves page background.
+    canvas_outlines_all: bool = False
+    canvas_outlines_empty: bool = True
 
     def preset(self, name: str) -> Optional[PagePreset]:
         return next((p for p in self.presets if p.name == name), None)

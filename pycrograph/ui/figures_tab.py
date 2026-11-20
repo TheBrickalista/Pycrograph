@@ -138,6 +138,7 @@ class FiguresTab(QWidget):
         self.a_zoom_out = action("−", lambda: self.canvas.zoom_by(0.8), QKeySequence.ZoomOut)
         for a in (self.a_fit, self.a_zoom_in, self.a_zoom_out):
             button(a)
+        bar.addWidget(self._build_outlines_button())
         bar.addSpacing(12)
         self.a_check = action("Check consistency", lambda: self.check_consistency(show=True),
                               tip="Levels, T/Z, scale bars, channels, sources, resolution, line "
@@ -158,6 +159,7 @@ class FiguresTab(QWidget):
 
         split = QSplitter(Qt.Horizontal)
         self.canvas = FigureCanvas()
+        self._apply_outlines()
         self.canvas.set_commit_callback(self._on_geometry_commit)
         self.canvas.set_overlay_builder(self._build_overlays)
         sc = self.canvas.figure_scene
@@ -194,6 +196,49 @@ class FiguresTab(QWidget):
         split.setStretchFactor(1, 0)
         split.setSizes([850, 420])
         lay.addWidget(split, 1)
+
+    def _build_outlines_button(self) -> QToolButton:
+        """**Outlines ▾**: dashed outlines of unselected panels on the canvas
+        (a hovered panel always shows one). Clicking toggles "All panel
+        outlines"; the menu also has "Panels with empty area" (crop beyond
+        the image). Preferences, not project data: not logged, not undoable,
+        never exported."""
+        self.a_outlines_all = QAction("All panel outlines", self, checkable=True)
+        self.a_outlines_all.setChecked(self.prefs.canvas_outlines_all)
+        self.a_outlines_all.setToolTip("Dashed outline on every unselected panel (never exported)")
+        self.a_outlines_empty = QAction("Panels with empty area", self, checkable=True)
+        self.a_outlines_empty.setChecked(self.prefs.canvas_outlines_empty)
+        self.a_outlines_empty.setToolTip("Outline panels whose crop extends beyond the image "
+                                         "(part of the panel is page background)")
+        for a in (self.a_outlines_all, self.a_outlines_empty):
+            a.toggled.connect(self._on_outlines_toggled)
+        menu = QMenu(self)
+        menu.addAction(self.a_outlines_all)
+        menu.addAction(self.a_outlines_empty)
+        b = QToolButton()
+        b.setText("Outlines")
+        b.setCheckable(True)                          # mirrors "All panel outlines"
+        b.setChecked(self.a_outlines_all.isChecked())
+        b.toggled.connect(self.a_outlines_all.setChecked)
+        self.a_outlines_all.toggled.connect(b.setChecked)
+        b.setToolButtonStyle(Qt.ToolButtonTextOnly)
+        b.setMenu(menu)
+        b.setPopupMode(QToolButton.MenuButtonPopup)
+        b.setToolTip("Panel outlines on the canvas (never exported). Click: all panels; "
+                     "arrow: options")
+        self.outlines_btn = b
+        return b
+
+    def _on_outlines_toggled(self, _on: bool) -> None:
+        self.prefs.canvas_outlines_all = self.a_outlines_all.isChecked()
+        self.prefs.canvas_outlines_empty = self.a_outlines_empty.isChecked()
+        self._save_prefs()
+        self._apply_outlines()
+
+    def _apply_outlines(self) -> None:
+        if hasattr(self, "canvas"):
+            self.canvas.figure_scene.set_outlines(self.prefs.canvas_outlines_all,
+                                                  self.prefs.canvas_outlines_empty)
 
     def _build_layout_bar(self, action) -> QHBoxLayout:
         bar = QHBoxLayout()
