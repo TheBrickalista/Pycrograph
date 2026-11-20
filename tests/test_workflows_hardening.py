@@ -217,6 +217,9 @@ def test_app_builds(name, asset):
     assert f"Pycrograph-${{{{ steps.version.outputs.tag }}}}{asset}" in text
     assert "--copy-metadata pycrograph" in text and "pycrograph/resources" in text
     assert "--selfcheck" in text and "--collect-data certifi" not in text   # offline: no TLS
+    # App icon (.icns / .ico) from the PG mark, never the logo with its wordmark.
+    assert "pycrograph/resources/pycrograph_icon.png" in text
+    assert "pycrograph_logo.png" not in text
     for job_id, step in _steps(WORKFLOW_DIR / name):
         if str(step.get("uses", "")).startswith("softprops/action-gh-release@"):
             assert step["if"] == "github.event_name == 'release'"

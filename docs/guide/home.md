@@ -1,19 +1,16 @@
 # Home
 
-The Home tab lists the projects of the workspace and the figures of the open
-project.
+Pycrograph opens on the Home tab. It shows the version, the licence and big
+buttons to the usual starting points:
 
-- **New Project…** creates a project (with an *Unsorted* dataset).
-- **Open** (or double-click a row) opens a project in the Library tab.
-- **Archive / Restore** soft-hides a project (never deletes it); tick
-  **Show archived** to see hidden ones.
-- **Export archive…** writes the open project as a `.pcarchive`: *light* (only
-  what the figures use, as OME-TIFF extracts) or *complete* (every raw file),
-  optionally with the exported figures and an integrity report. See
-  {doc}`../concepts/pcarchive-format`.
-- **Import archive…** verifies a `.pcarchive` completely and imports it as a
-  **new** project; nothing is written if any check fails.
-- **Figures**: double-click a figure to open it; **New Figure…** creates one.
+| Button | Does |
+|---|---|
+| **New Project** | Asks for a name and creates a project with an *Unsorted* dataset. |
+| **Open Project** | Goes to the {doc}`projects` tab to pick a project of the workspace. |
+| **Import Images** | Registers image files in the open project (by reference, never copied), as **Import Images…** in the toolbar, then shows them in the {doc}`library`. |
+| **Figures** | Goes to the {doc}`figures` editor. |
+| **Import Archive…** | Verifies a `.pcarchive` and imports it as a new project (see {doc}`projects`). |
+| **About / License** | Goes to the {doc}`about` tab (version, licence, citation). |
 
-Long archive operations show a progress dialog and can be cancelled; a
-cancelled export or import leaves nothing behind.
+**Import Images** and **Figures** need an open project. They are greyed out
+until you create or open one; their tooltip says so.

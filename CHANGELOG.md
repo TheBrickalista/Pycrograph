@@ -7,6 +7,17 @@ All notable changes to Pycrograph are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **New Home tab** (`ui/home_tab.py`, laid out like PysternBlot's), where the
+  app now opens.
+  - It shows the logo (sharp on HiDPI screens, on a light card with a dark
+    palette), "Version x.y.z" under it, a one-line description, and the
+    copyright and GPLv3 notice.
+  - Big buttons: **New Project**, **Open Project** (→ Projects tab),
+    **Import Images** (the toolbar's import flow, then the Library tab),
+    **Figures** (→ Figures tab), **Import Archive…**, and **About / License**.
+    *Import Images* and *Figures* are greyed out, with a tooltip, until a
+    project is open.
+  - New guide page `guide/home.md`.
 - **Inset numbers can be hidden.** `InsetStyle.show_number` (default on),
   with a *Show number* checkbox in the Insets & Shapes tab next to the other
   style options. It applies to every selected inset in one gesture, shows a
@@ -128,6 +139,17 @@ All notable changes to Pycrograph are documented here. The format follows
   divergence (`insets.group_invariant_issues`).
 
 ### Changed
+- **The former Home tab is now the Projects tab** (`ui/projects_tab.py`,
+  `ProjectsTab`), with the same behaviour. Tab order: Home, Projects, Library,
+  Figures, Preferences, About. The guide page `guide/home.md` became
+  `guide/projects.md`.
+- **The app icon is the PG mark** (`resources/pycrograph_icon.png`): window
+  icon, the macOS `.icns` and the Windows `.ico` of the release builds. The
+  full logo with its wordmark (`resources/pycrograph_logo.png`) is shown on
+  Home. Both PNGs are rendered from `docs/_static/logo/*.svg` (QtSvg cannot
+  draw the logo's clipPath / blur). `--selfcheck` checks that both are bundled.
+- Docs: the PG mark is the sidebar logo and the favicon. The README opens with
+  the logo.
 - **Insets no longer inherit the parent's scale bar.**
   - *Create inset* gives the inset the parent's scale-bar style, unit and
     length, but hidden. Ticking *Show scale bar* later matches the parent's

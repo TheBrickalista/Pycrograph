@@ -37,7 +37,7 @@ jobs:
       - name: Install dependencies
         run: uv sync --locked --extra build
 
-      - name: Generate .ico icon from logo PNG
+      - name: Generate .ico icon from the PG mark (pycrograph_icon.png)
         shell: bash
         run: |
           mkdir -p build
@@ -45,7 +45,7 @@ jobs:
           from PIL import Image
           import struct, io
 
-          src = Image.open("pycrograph/resources/pycrograph_logo.png").convert("RGBA")
+          src = Image.open("pycrograph/resources/pycrograph_icon.png").convert("RGBA")
 
           # Generate all standard Windows icon sizes
           sizes = [16, 24, 32, 48, 64, 128, 256]

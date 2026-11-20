@@ -1,6 +1,6 @@
 # Quickstart
 
-1. **Home → New Project…** A project starts with an *Unsorted* dataset.
+1. **Home → New Project.** A project starts with an *Unsorted* dataset.
 2. **Library → Import Images…** Select MetaMorph `.tif` / `.stk` (or plain /
    ImageJ TIFF) files. They are registered **by reference**: nothing is copied;
    the SHA-256 is computed in the background (⏳ in the tree until done).
@@ -19,7 +19,7 @@
 7. **Check consistency**, then **Export…** to PDF / SVG / TIFF / PNG. Each export
    writes a `.provenance.json` next to the file and one entry in the
    hash-chained log.
-8. **Home → Export archive…** to hand the project over (light or complete).
+8. **Projects → Export archive…** to hand the project over (light or complete).
 
 Everything is saved automatically after each change; every change can be
 undone in the Figures tab.

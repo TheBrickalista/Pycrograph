@@ -6,152 +6,235 @@
 # the Free Software Foundation, version 3 of the License.
 
 """
-Home tab: projects of the workspace (new / open / archive / restore) and the
-figures of the open project. Emits intents; the main window acts.
+Home tab: logo, version, licence and big buttons to the main entry points
+(new / open project, import images, figures, import archive, about).
+
+Layout after PysternBlot's home tab (``MainWindow._build_home_tab`` /
+``_make_home_button``). It only emits intents; the main window acts.
+
+The logo is ``resources/pycrograph_logo.png`` (rendered from the SVG with
+rsvg; QtSvg cannot draw its clipPath / blur, so the SVG is never loaded in
+Qt), trimmed to its visible part and scaled at the screen's device pixel
+ratio so it stays sharp on HiDPI displays. Its wordmark is dark: with a dark
+palette the logo sits on a light rounded card.
 """
 
 from __future__ import annotations
 
-from typing import Optional
-
-from PySide6.QtCore import Qt, Signal
+import numpy as np
+from PySide6.QtCore import QEvent, Qt, Signal
+from PySide6.QtGui import QColor, QFont, QImage, QPalette, QPixmap
 from PySide6.QtWidgets import (
-    QAbstractItemView, QCheckBox, QHBoxLayout, QHeaderView, QLabel, QListWidget,
-    QListWidgetItem, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
+    QFrame, QHBoxLayout, QLabel, QPushButton, QScrollArea, QSizePolicy, QVBoxLayout, QWidget,
 )
 
-from ..models import Project, ProjectMeta
-from ..ui_text import plural
+from .. import __version__
+from ..selfcheck import logo_path
 
-ROLE = Qt.UserRole
+LOGO_WIDTH = 320                     # logical pixels (buttons visible in 1280×800)
+AUTHORS = "Etienne Boulter"          # as in CITATION.cff (test_ui_home checks)
+INSTITUTION = "IRCAN, Inserm U1081"
+SUBTITLE = ("Publication figures from fluorescence microscopy, with full provenance: "
+            "raw files never modified, SHA-256 verification, hash-chained log and "
+            "integrity reports.")
+SUBTITLE_ALPHA = 0.7
+NEEDS_PROJECT = "Open or create a project first."
+BUTTON_STYLE = """
+    QPushButton {
+        background: palette(button);
+        border: 1px solid palette(mid);
+        border-radius: 10px;
+        padding: 12px 18px;
+        font-size: 14px;
+        font-weight: 600;
+    }
+    QPushButton:hover { border: 1px solid palette(dark); }
+    QPushButton:pressed { background: palette(midlight); }
+"""
+CARD_STYLE = "QFrame#logoCard { background: #f4f4f4; border-radius: 16px; }"
 
 
-class HomeTab(QWidget):
+def _trimmed(img: QImage) -> QImage:
+    """The image cropped to its non-transparent part (the PNG has a wide
+    transparent margin), with a small border."""
+    rgba = img.convertToFormat(QImage.Format_RGBA8888)
+    arr = np.frombuffer(rgba.constBits(), np.uint8).reshape(
+        rgba.height(), rgba.bytesPerLine())[:, :rgba.width() * 4]
+    ys, xs = np.nonzero(arr[:, 3::4])
+    if not len(xs):
+        return img
+    pad = max(2, img.width() // 100)
+    x0, y0 = max(0, xs.min() - pad), max(0, ys.min() - pad)
+    x1, y1 = min(img.width(), xs.max() + 1 + pad), min(img.height(), ys.max() + 1 + pad)
+    return rgba.copy(int(x0), int(y0), int(x1 - x0), int(y1 - y0))
+
+
+def logo_pixmap(width: int, dpr: float) -> QPixmap:
+    """The logo `width` logical pixels wide, rendered at `dpr` device pixels
+    per logical pixel (null pixmap if the resource is missing)."""
+    img = QImage(str(logo_path()))
+    if img.isNull():
+        return QPixmap()
+    dpr = max(1.0, float(dpr))
+    pm = QPixmap.fromImage(_trimmed(img).scaledToWidth(round(width * dpr),
+                                                       Qt.SmoothTransformation))
+    pm.setDevicePixelRatio(dpr)
+    return pm
+
+
+def _font(pixel_size: int, weight=QFont.Normal) -> QFont:
+    """A font, not a style sheet: a widget with a style sheet keeps its old
+    colours when the palette changes (light ↔ dark)."""
+    f = QFont()
+    f.setPixelSize(pixel_size)
+    f.setWeight(weight)
+    return f
+
+
+def subtitle_color(palette: QPalette) -> QColor:
+    """WindowText at SUBTITLE_ALPHA over Window, as an opaque colour: a
+    softer text that keeps its contrast in light and dark palettes (Mid /
+    PlaceholderText greys are too faint on some dark themes)."""
+    fg, bg = palette.color(QPalette.WindowText), palette.color(QPalette.Window)
+    a = SUBTITLE_ALPHA
+    return QColor.fromRgbF(*(a * f + (1 - a) * b for f, b in
+                             ((fg.redF(), bg.redF()), (fg.greenF(), bg.greenF()),
+                              (fg.blueF(), bg.blueF()))))
+
+
+def is_dark(palette: QPalette) -> bool:
+    return palette.color(QPalette.Window).lightness() < 128
+
+
+class HomeTab(QScrollArea):
     new_project_requested = Signal()
-    open_project_requested = Signal(str)          # project id
-    archive_requested = Signal(str, bool)         # project id, archived (soft-hide)
-    export_archive_requested = Signal()           # .pcarchive of the open project
+    open_project_requested = Signal()          # → Projects tab
+    import_images_requested = Signal()         # → the import flow (needs a project)
+    figures_requested = Signal()               # → Figures tab (needs a project)
     import_archive_requested = Signal()
-    figure_requested = Signal(str)                # figure id (open project)
-    new_figure_requested = Signal()
+    about_requested = Signal()                 # → About tab
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._metas: list[ProjectMeta] = []
-        lay = QVBoxLayout(self)
-        lay.setContentsMargins(16, 16, 16, 16)
-        lay.setSpacing(10)
+        self.setFrameShape(QFrame.NoFrame)
+        self.setWidgetResizable(True)
+        self._dpr = 0.0
+        container = QWidget()
+        root = QVBoxLayout(container)
+        root.setContentsMargins(30, 30, 30, 30)
+        root.setSpacing(14)
+        root.addStretch(1)
 
-        top = QHBoxLayout()
-        title = QLabel("Projects")
-        title.setStyleSheet("font-size: 16px; font-weight: 600;")
-        top.addWidget(title)
-        top.addStretch(1)
-        self.show_archived = QCheckBox("Show archived")
-        self.show_archived.toggled.connect(lambda _on: self.refresh_requested())
-        top.addWidget(self.show_archived)
-        self.new_btn = QPushButton("New Project…")
-        self.new_btn.clicked.connect(self.new_project_requested)
-        self.open_btn = QPushButton("Open")
-        self.open_btn.clicked.connect(self._open_selected)
-        self.archive_btn = QPushButton("Archive")
-        self.archive_btn.clicked.connect(self._archive_selected)
-        self.export_archive_btn = QPushButton("Export archive…")
-        self.export_archive_btn.setToolTip("Write the open project as a .pcarchive (light: what the "
-                                           "figures use; complete: every raw file)")
-        self.export_archive_btn.clicked.connect(self.export_archive_requested)
-        self.export_archive_btn.setEnabled(False)
-        self.import_archive_btn = QPushButton("Import archive…")
-        self.import_archive_btn.setToolTip("Verify a .pcarchive and import it as a new project")
-        self.import_archive_btn.clicked.connect(self.import_archive_requested)
-        for b in (self.new_btn, self.open_btn, self.archive_btn, self.export_archive_btn,
-                  self.import_archive_btn):
-            top.addWidget(b)
-        lay.addLayout(top)
+        # Logo (on a light card when the palette is dark).
+        self.logo_card = QFrame()
+        self.logo_card.setObjectName("logoCard")
+        card = QVBoxLayout(self.logo_card)
+        self.logo = QLabel()
+        self.logo.setAlignment(Qt.AlignCenter)
+        card.addWidget(self.logo)
+        root.addWidget(self.logo_card, 0, Qt.AlignHCenter)
 
-        self.table = QTableWidget(0, 3)
-        self.table.setHorizontalHeaderLabels(["Name", "Modified", "Created"])
-        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
-        self.table.verticalHeader().setVisible(False)
-        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.table.setSelectionMode(QAbstractItemView.SingleSelection)
-        self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self.table.setAlternatingRowColors(True)
-        self.table.cellDoubleClicked.connect(lambda _r, _c: self._open_selected())
-        self.table.itemSelectionChanged.connect(self._update_buttons)
-        lay.addWidget(self.table, 2)
+        self.title = QLabel(f"Version {__version__}")      # the logo shows the name
+        self.title.setAlignment(Qt.AlignCenter)
+        self.title.setFont(_font(16, QFont.DemiBold))
+        root.addWidget(self.title)
+        self.subtitle = QLabel(SUBTITLE)
+        self.subtitle.setAlignment(Qt.AlignCenter)
+        self.subtitle.setWordWrap(True)
+        self.subtitle.setFont(_font(13))
+        root.addWidget(self.subtitle)
 
-        ftop = QHBoxLayout()
-        self.fig_title = QLabel("Figures")
-        self.fig_title.setStyleSheet("font-size: 14px; font-weight: 600;")
-        ftop.addWidget(self.fig_title)
-        ftop.addStretch(1)
-        self.new_fig_btn = QPushButton("New Figure…")
-        self.new_fig_btn.clicked.connect(self.new_figure_requested)
-        ftop.addWidget(self.new_fig_btn)
-        lay.addLayout(ftop)
-        self.figures = QListWidget()
-        self.figures.itemDoubleClicked.connect(
-            lambda it: self.figure_requested.emit(it.data(ROLE)))
-        lay.addWidget(self.figures, 1)
-        self._lister = None
-        self._update_buttons()
+        self.copyright = QLabel(
+            f"<p>Copyright &copy; 2026 {AUTHORS}, {INSTITUTION}</p>"
+            "<p>This software is distributed under the <b>GNU General Public License v3 "
+            "(GPLv3)</b>.<br>This software is provided without warranty of any kind.</p>")
+        self.copyright.setTextFormat(Qt.RichText)
+        self.copyright.setAlignment(Qt.AlignCenter)
+        self.copyright.setWordWrap(True)
+        root.addWidget(self.copyright)
 
-    # The main window provides the listing (workspace access stays there).
-    def set_lister(self, lister) -> None:
-        self._lister = lister
+        row = QHBoxLayout()
+        row.setSpacing(18)
+        row.addStretch(1)
+        self.new_btn = self._big_button("New Project", self.new_project_requested,
+                                        "Create a project (with an Unsorted dataset)")
+        self.open_btn = self._big_button("Open Project", self.open_project_requested,
+                                         "Browse the workspace's projects (Projects tab)")
+        self.import_btn = self._big_button("Import Images", self.import_images_requested)
+        self.figures_btn = self._big_button("Figures", self.figures_requested)
+        self.archive_btn = self._big_button("Import Archive…", self.import_archive_requested,
+                                            "Verify a .pcarchive and import it as a new project")
+        self.big_buttons = (self.new_btn, self.open_btn, self.import_btn, self.figures_btn,
+                            self.archive_btn)
+        for b in self.big_buttons:
+            row.addWidget(b)
+        row.addStretch(1)
+        root.addLayout(row)
 
-    def refresh_requested(self) -> None:
-        if self._lister is not None:
-            self.set_projects(self._lister(self.show_archived.isChecked()))
+        about = QHBoxLayout()
+        about.addStretch(1)
+        self.about_btn = QPushButton("About / License")
+        self.about_btn.clicked.connect(self.about_requested)
+        about.addWidget(self.about_btn)
+        about.addStretch(1)
+        root.addLayout(about)
+        root.addStretch(2)
+        self.setWidget(container)
 
-    def set_projects(self, metas: list[ProjectMeta]) -> None:
-        self._metas = list(metas)
-        self.table.setRowCount(0)
-        for m in self._metas:
-            r = self.table.rowCount()
-            self.table.insertRow(r)
-            name = QTableWidgetItem(m.name + ("  (archived)" if m.is_archived else ""))
-            name.setData(ROLE, m.id)
-            self.table.setItem(r, 0, name)
-            self.table.setItem(r, 1, QTableWidgetItem(m.modified_utc or ""))
-            self.table.setItem(r, 2, QTableWidgetItem(m.created_utc))
-        self._update_buttons()
+        self.set_project_open(False)
+        self._apply_theme()
 
-    def set_open_project(self, project: Optional[Project]) -> None:
-        self.export_archive_btn.setEnabled(project is not None)
-        self.figures.clear()
-        self.new_fig_btn.setEnabled(project is not None)
-        if project is None:
-            self.fig_title.setText("Figures (no project open)")
+    def _big_button(self, text: str, signal, tip: str = "") -> QPushButton:
+        """PysternBlot's home button (``_make_home_button``), palette colours."""
+        b = QPushButton(text)
+        b.clicked.connect(signal)
+        b.setMinimumSize(170, 80)
+        b.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        if tip:
+            b.setToolTip(tip)
+        return b
+
+    # ------------------------------------------------------------- state
+    def set_project_open(self, is_open: bool) -> None:
+        """Import Images and Figures need an open project."""
+        for b, tip in ((self.import_btn, "Register image files in the open project "
+                                         "(by reference, never copied)"),
+                       (self.figures_btn, "Open the figure editor")):
+            b.setEnabled(is_open)
+            b.setToolTip(tip if is_open else NEEDS_PROJECT)
+
+    # ------------------------------------------------------------- theme
+    def _apply_theme(self) -> None:
+        dark = is_dark(self.palette())
+        for b in self.big_buttons:            # palette(...) is resolved when the sheet is set
+            b.setStyleSheet("")
+            b.setStyleSheet(BUTTON_STYLE)
+        self.logo_card.setStyleSheet(CARD_STYLE if dark else "")
+        sub = self.subtitle.palette()
+        sub.setColor(QPalette.WindowText, subtitle_color(self.palette()))
+        self.subtitle.setPalette(sub)
+        m = 18 if dark else 0
+        self.logo_card.layout().setContentsMargins(m, m, m, m)
+        self._update_logo(force=True)
+
+    def _update_logo(self, force: bool = False) -> None:
+        dpr = self.devicePixelRatioF()
+        if not force and dpr == self._dpr:
             return
-        self.fig_title.setText(f"Figures of “{project.project.name}”")
-        for f in project.figures:
-            if f.hidden:
-                continue
-            it = QListWidgetItem(f"{f.name}  —  {plural(len(f.panels), 'panel')}")
-            it.setData(ROLE, f.id)
-            self.figures.addItem(it)
+        self._dpr = dpr
+        pm = logo_pixmap(LOGO_WIDTH, dpr)
+        if pm.isNull():
+            self.logo.setText("Pycrograph")
+        else:
+            self.logo.setPixmap(pm)
 
-    def _selected_meta(self) -> Optional[ProjectMeta]:
-        rows = self.table.selectionModel().selectedRows()
-        if not rows:
-            return None
-        pid = self.table.item(rows[0].row(), 0).data(ROLE)
-        return next((m for m in self._metas if m.id == pid), None)
+    def showEvent(self, event) -> None:
+        self._update_logo()                         # the screen's ratio is known now
+        super().showEvent(event)
 
-    def _update_buttons(self) -> None:
-        m = self._selected_meta()
-        self.open_btn.setEnabled(m is not None)
-        self.archive_btn.setEnabled(m is not None)
-        self.archive_btn.setText("Restore" if m is not None and m.is_archived else "Archive")
-
-    def _open_selected(self) -> None:
-        m = self._selected_meta()
-        if m is not None:
-            self.open_project_requested.emit(m.id)
-
-    def _archive_selected(self) -> None:
-        m = self._selected_meta()
-        if m is not None:
-            self.archive_requested.emit(m.id, not m.is_archived)
+    def changeEvent(self, event) -> None:
+        if event.type() == QEvent.PaletteChange:
+            self._apply_theme()
+        elif event.type() == getattr(QEvent.Type, "DevicePixelRatioChange", None):   # Qt ≥ 6.6
+            self._update_logo()
+        super().changeEvent(event)

@@ -69,8 +69,11 @@ def test_shared_core_markers_present():
 def test_release_files_present():
     """What the release workflows need from the source tree."""
     from PIL import Image
-    with Image.open(ROOT / "pycrograph" / "resources" / "pycrograph_logo.png") as im:
-        assert im.size == (1024, 1024)
+    for name in ("pycrograph_logo.png", "pycrograph_icon.png"):
+        with Image.open(ROOT / "pycrograph" / "resources" / name) as im:
+            assert im.size == (1024, 1024), name
+    for name in ("pycrograph_logo.svg", "pycrograph_icon.svg"):             # sources
+        assert (ROOT / "docs" / "_static" / "logo" / name).is_file(), name
     tmpl = (ROOT / ".github" / "RELEASE_TEMPLATE.md").read_text(encoding="utf-8")
     assert "Pycrograph-vVERSION-macOS.zip" in tmpl and "Pycrograph-vVERSION-Windows.exe" in tmpl
     assert (ROOT / "launcher.py").is_file()
