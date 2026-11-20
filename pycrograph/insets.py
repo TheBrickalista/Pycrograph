@@ -170,7 +170,9 @@ def create_inset(figure: Figure, parent: Panel, ref: ImageRef, raw_rect: Rect,
     """A new inset of `parent` showing `raw_rect` (raw pixels) at
     `magnification` × the parent's (µm per page-mm divided by it), placed
     right of the parent. Rendering, T/Z and orientation copied from the
-    parent; labels, shapes and lock group are not. A parent that is part of
+    parent; labels, shapes, lock group and scale-bar visibility are not
+    copied (the bar's style, unit and length are, hidden, so ticking it on
+    matches the parent's). A parent that is part of
     a row (split channels, a lock group laid out in a row…) gets the inset
     directly below it when there is room, so the row stays a row."""
     s = ref.metadata.shape
@@ -179,6 +181,7 @@ def create_inset(figure: Figure, parent: Panel, ref: ImageRef, raw_rect: Rect,
     ow, oh = V.oriented_wh(w, h, parent.rotation_deg)
     inset = parent.model_copy(deep=True, update={
         "id": new_id, "inset_of": parent.id, "lock_group": None, "labels": [], "shapes": [],
+        "scale_bar": parent.scale_bar.model_copy(update={"visible": False}),
         "inset_style": InsetStyle(color=next_color(figure, parent.id)),
         "width_mm": round(ow / ppm, 6), "height_mm": round(oh / ppm, 6)})
     V.set_view(inset, x + w / 2.0, y + h / 2.0, ppm)
@@ -382,7 +385,8 @@ def replicate_inset(figure: Figure, src_inset: Panel, targets: Iterable[Panel],
     centre, clamped (skipped when only one of the two images is calibrated:
     µm cannot be matched to pixels). Default: "region" if compatible, else "size" (per
     target). Same physical magnification, colour, width and flags as the
-    source. Placement: directly below each target when the source sits below
+    source, and the source's scale bar (visible or not; per inset afterwards,
+    never propagated). Placement: directly below each target when the source sits below
     its parent or the parents form a row (same vertical gap and left offset as
     the source); otherwise at the source's offset from its parent; place() if
     that position is taken or off the page. With `link`, source and copies share a region_group (the
@@ -428,6 +432,9 @@ def replicate_inset(figure: Figure, src_inset: Panel, targets: Iterable[Panel],
         inset = create_inset(figure, tgt, ref, rect, new_id(), magnification=mag, gap_mm=gap_mm)
         inset.inset_style = st.model_copy(update={
             "region_group": group if link else None, "region_link": m})
+        # The SOURCE inset's scale bar (shown or not, same µm length and
+        # style): one inset repeated, whatever each target parent shows.
+        inset.scale_bar = src_inset.scale_bar.model_copy(deep=True)
         # One inset repeated: the source's page size and orientation, and the
         # region exactly (same raw rect, or the same µm size).
         _match_geometry(inset, src_inset)

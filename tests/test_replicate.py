@@ -19,6 +19,7 @@ from pycrograph import layout as L
 from pycrograph import viewport as V
 from pycrograph.figures import FigureEditor, create_figure
 from pycrograph.models import PROJECT_FORMAT_VERSION
+from pycrograph.scalebar import bar_geometry
 from pycrograph.storage import create_dataset, register_image, set_image_hash, sha256_file
 from synth import metamorph_xml, reference_like_plane, write_metamorph_tiff
 
@@ -369,3 +370,51 @@ def test_replicate_no_room_below_falls_back(env):
     others = [q for q in fig.panels if q.id != cp.id]
     assert not any(I._overlaps((cp.x_mm, cp.y_mm, cp.width_mm, cp.height_mm),
                                (q.x_mm, q.y_mm, q.width_mm, q.height_mm)) for q in others)
+
+
+# -------------------------------------------------------------- scale bars
+def bar(panel):
+    return panel.scale_bar.model_dump()
+
+
+def test_new_inset_has_parent_bar_style_but_hidden(env):
+    p, fig, ed, r = env
+    [a] = add(ed, r["gfp"])
+    a.scale_bar = a.scale_bar.model_copy(update={
+        "visible": True, "length": 5.0, "color": "#FFAA00", "thickness_pt": 3.0,
+        "position": "top-left", "font_size_pt": 9.0, "label_position": "above"})
+    src = make_inset(ed, a, (8, 8, 16, 16))
+    assert src.scale_bar.visible is False                          # not inherited
+    assert {**bar(src), "visible": True} == bar(a)                 # style, unit, length kept
+    src.scale_bar.visible = True                                   # ticking it on
+    g_in, g_par = bar_geometry(src, r["gfp"]), bar_geometry(a, r["gfp"])
+    assert g_in.text == g_par.text and src.scale_bar.color == "#FFAA00"
+    assert g_in.length_mm == pytest.approx(2 * g_par.length_mm)    # 2× magnification
+
+
+@pytest.mark.parametrize("shown", [True, False])
+def test_replicate_copies_source_bar_not_target_parents(env, shown):
+    p, fig, ed, r = env
+    a, b, c = add(ed, r["gfp"], r["rfp"], r["coarse"])             # c: 0.65 µm/px
+    for q, length, colour in ((b, 20.0, "#00FF00"), (c, 50.0, "#0000FF")):
+        q.scale_bar = q.scale_bar.model_copy(update={"visible": True, "length": length,
+                                                     "color": colour})
+    src = make_inset(ed, a, (8, 8, 16, 16))
+    src.scale_bar = src.scale_bar.model_copy(update={"visible": shown, "length": 3.0,
+                                                     "color": "#FF00FF"})
+    copies = replicate(ed, src, [b, c])
+    assert [c_.inset_style.region_link for c_ in copies] == ["region", "size"]
+    for cp in copies:
+        assert bar(cp) == bar(src)                                 # visible or not, same style
+    if shown:
+        # Same µm length at the same physical magnification: the same bar on the page,
+        # across pixel sizes.
+        g0 = bar_geometry(src, r["gfp"])
+        for cp, ref in zip(copies, (r["rfp"], r["coarse"])):
+            g = bar_geometry(cp, ref)
+            assert g.text == g0.text and g.length_mm == pytest.approx(g0.length_mm, rel=1e-6)
+    # Per inset afterwards: a linked edit does not propagate the bar.
+    n = len(ed.history._undo)
+    ed.edit([src.id], lambda q, _r: setattr(q.scale_bar, "length", 7.0) or True, key="bar")
+    assert len(ed.history._undo) == n + 1
+    assert all(cp.scale_bar.length == 3.0 for cp in copies)

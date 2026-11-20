@@ -38,6 +38,16 @@ The inset stays tied to its parent:
   ticked (the default), the inset changes time point, Z plane, levels and LUTs
   with its parent.
 
+**Scale bar.** A new inset starts **without a scale bar**, even when its
+parent shows one: the magnification is usually stated by the parent's bar or
+in the legend. If the journal asks for a bar on the inset too, select it and
+tick **Show scale bar** in the **Labels** tab. The bar is already set to the
+parent's length, unit, colour and position, drawn at the inset's
+magnification. **Check consistency** warns if it is longer than the inset
+(*scale bar longer than the panel*). It doesn't flag an inset without a bar
+next to a parent that has one, but it does flag a row of insets where only
+some show a bar.
+
 The same tab sets the inset's style: **Colour**, line **Width**,
 *Rectangle on the parent*, *Matching border on the inset* and **Show
 number**. Untick *Show number* to hide the number on the inset and next to
@@ -57,7 +67,9 @@ not shared through a linked group (see section 4).
 ## 2. Replicate an inset
 
 *Replicate to…* puts **the same inset** on other panels: same region (or
-same physical size), same magnification, colour, width and follow options.
+same physical size), same magnification, colour, width, follow options and
+**scale bar** (shown or not, as on the inset you replicate, whatever bar the
+other parents show).
 
 1. Select **the inset**. Selecting its parent also works if that panel has
    only one inset.
@@ -221,8 +233,8 @@ propagate.
 
 - its **position on the page**;
 - for Same size members, **where** on its own image it looks;
-- its colour, line width, *Show number* and follow options. To change these
-  for the whole group, select all its insets together first.
+- its colour, line width, *Show number*, scale bar and follow options. To
+  change these for the whole group, select all its insets together first.
 
 **Unlink from group** (Insets & Shapes tab) takes the selected insets out of
 the group so you can change one alone. **Make ordinary panel** turns an inset

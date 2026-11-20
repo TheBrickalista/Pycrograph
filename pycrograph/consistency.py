@@ -22,6 +22,7 @@ columns_of) and each lock group.
 | tz            | warning  | in a row, different T / Z / projection (montage members, which |
 |               |          | differ on purpose, are left out)                               |
 | scalebar      | warning  | in a row, a scale bar on some panels but not the others        |
+|               |          | (ordinary panels and insets compared separately)               |
 | channels      | warning  | in a group, the same channel index with a different channel   |
 |               |          | name / wavelength (figures.channel_mismatches)                 |
 | bit_depth     | warning  | a lock group mixes images of different bit depths: equal       |
@@ -192,11 +193,16 @@ def check_figure(project: Project, figure: Figure,
             issues.append(Issue("warning", "tz", f"{name}: different time / Z — "
                                 + ", ".join(_tz_text(k) for k in keys),
                                 tuple(p.id for p in compared)))
-        with_bar = [p for p in panels if p.scale_bar.visible]
-        if with_bar and len(with_bar) < len(panels):
-            issues.append(Issue("warning", "scalebar",
-                                f"{name}: scale bar on {len(with_bar)} of {len(panels)} panels",
-                                tuple(p.id for p in panels)))
+        # Insets start without a bar: compare ordinary panels with each other
+        # and insets with each other, never a parent's bar with its inset.
+        for kind_panels, what in (([p for p in panels if not p.inset_of], "panel"),
+                                  ([p for p in panels if p.inset_of], "inset")):
+            with_bar = [p for p in kind_panels if p.scale_bar.visible]
+            if with_bar and len(with_bar) < len(kind_panels):
+                issues.append(Issue("warning", "scalebar",
+                                    f"{name}: scale bar on {len(with_bar)} of "
+                                    f"{plural(len(kind_panels), what)}",
+                                    tuple(p.id for p in kind_panels)))
 
     # ---- per panel
     min_line = preset.min_line_pt

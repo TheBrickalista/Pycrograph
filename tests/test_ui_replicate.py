@@ -309,3 +309,27 @@ def test_canvas_resize_of_linked_inset(app, setup):
     tab.a_undo.trigger()
     f = tab.current_figure()
     assert f.panel(cid).width_mm == pytest.approx(w0)
+
+
+def test_create_inset_on_several_panels_ignores_their_scale_bars(app, setup):
+    """Drawn on one of several selected panels (each with its own visible
+    bar): the inset and its copies start without a bar, across pixel sizes."""
+    w, tab, view, ids = setup
+    a, b, c = w.add_to_figure([ids[1], ids[2], ids[3]])         # c: other pixel size
+    for q, length in ((a, 5.0), (b, 10.0), (c, 20.0)):
+        q.scale_bar = q.scale_bar.model_copy(update={"visible": True, "length": length})
+    view.fit_pages()
+    view.select_ids([a.id, b.id, c.id])
+    tab.replicate_prompt = lambda src, sets: (None, True, [p.id for p, _r, _n in sets["Selected panels"]])
+    assert tab.start_create_inset()
+    item = view.item_for(a.id)
+    drag(view, item.mapToScene(QPointF(5, 5)), item.mapToScene(QPointF(15, 12)))
+    f = tab.current_figure()
+    insets = [p for p in f.panels if p.inset_of]
+    assert sorted(p.inset_of for p in insets) == sorted([a.id, b.id, c.id])
+    src = next(p for p in insets if p.inset_of == a.id)
+    assert all(p.scale_bar.visible is False for p in insets)
+    assert all(p.scale_bar.length == 5.0 for p in insets)       # the source's (= a's style)
+    assert all(f.panel(q).scale_bar.visible for q in (a.id, b.id, c.id))   # parents untouched
+    assert {p.inset_style.region_link for p in insets} == {"region", "size"}
+    assert src.scale_bar.model_dump() == next(p for p in insets if p.inset_of == c.id).scale_bar.model_dump()

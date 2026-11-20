@@ -32,6 +32,7 @@ from pycrograph.logchain import verify_log_chain  # noqa: E402
 from pycrograph.models import PanelLabel, Shape, ZProjection  # noqa: E402
 from pycrograph.readers import open_image  # noqa: E402
 from pycrograph.render import PanelRenderer, crop_bounds  # noqa: E402
+from pycrograph.scalebar import bar_geometry  # noqa: E402
 from pycrograph.storage import (  # noqa: E402
     create_dataset, register_image, set_image_hash, sha256_file,
 )
@@ -340,3 +341,19 @@ def _pdf_text_blocks(data: bytes) -> int:
             continue
         n += len(re.findall(rb"(?:^|\s)BT\s", body))
     return n
+
+
+def test_inset_of_parent_with_scale_bar_exports_no_bar(env, workspace):
+    p, fig, renderer, (one, two, zs), (pa, pb, pc, inset), out = env
+    assert pa.scale_bar.visible and inset.inset_of == pa.id
+    assert inset.scale_bar.visible is False and inset.scale_bar.length == pa.scale_bar.length
+    text = bar_geometry(pa, one).text
+    res = export_figure(workspace, p, fig, renderer, out / "bars.svg", ExportSettings("svg"))
+    assert _svg_texts(res.files[0].read_text()).count(text) == 1      # the parent's bar only
+    side = json.loads(res.sidecar.read_text())
+    rec = next(r for r in side["panels"] if r["id"] == inset.id)
+    assert rec["scale_bar"]["visible"] is False and "text" not in rec["scale_bar"]
+    # Ticked on later: the parent's length and style, at the inset's magnification.
+    inset.scale_bar.visible = True
+    res = export_figure(workspace, p, fig, renderer, out / "bars2.svg", ExportSettings("svg"))
+    assert _svg_texts(res.files[0].read_text()).count(text) == 2

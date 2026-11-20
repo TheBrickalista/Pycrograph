@@ -128,6 +128,19 @@ All notable changes to Pycrograph are documented here. The format follows
   divergence (`insets.group_invariant_issues`).
 
 ### Changed
+- **Insets no longer inherit the parent's scale bar.**
+  - *Create inset* gives the inset the parent's scale-bar style, unit and
+    length, but hidden. Ticking *Show scale bar* later matches the parent's
+    style, at the inset's magnification.
+  - *Replicate to…* gives each copy the source inset's bar (shown or not, same
+    µm length and style), not its own parent's, so a linked group stays one
+    inset repeated across pixel sizes. The bar stays per inset afterwards and
+    is never propagated.
+  - **Existing projects are not migrated:** insets created before this keep
+    their bar. Untick *Show scale bar* in the Labels tab to remove it.
+  - Consistency rule `scalebar` (row with a bar on some panels only) now
+    compares ordinary panels with each other and insets with each other, so
+    an inset without a bar beside its parent is no longer reported.
 - Messages use proper singular / plural ("1 panel", "3 panels", "1 error, 2
   warnings") instead of "panel(s)", "inset(s)", "image(s)" or "warning(s)":
   status bar, consistency check, Lock and Replicate dialogs, undo labels,
