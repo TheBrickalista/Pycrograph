@@ -33,6 +33,7 @@ from . import __version__
 from . import insets as I
 from . import viewport as V
 from .figures import lock_members
+from .layout import lock_kind
 from .labels import channel_name, group_time_unit, plain_text, resolve_label
 from .models import Figure, ImageRef, Panel, Project
 from .render import crop_bounds
@@ -111,6 +112,7 @@ def panel_record(project: Project, figure: Figure, panel: Panel, index: int,
         "geometry_mm": {"x": panel.x_mm, "y": panel.y_mm, "width": panel.width_mm,
                         "height": panel.height_mm},
         "image_id": panel.image_id, "lock_group": panel.lock_group,
+        "lock_kind": lock_kind(panel.lock_group) if panel.lock_group else None,
     }
     if ref is None:
         rec["error"] = "image not in project"

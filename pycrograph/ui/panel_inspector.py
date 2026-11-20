@@ -36,6 +36,7 @@ from PySide6.QtWidgets import (
 )
 
 from .. import figures as F
+from .. import layout as L
 from .. import viewport as V
 from ..display import auto_window, compute_saturation_stats
 from ..models import ChannelInfo, ChannelSettings, ImageRef, Panel
@@ -71,6 +72,25 @@ def _values(panels: list[Panel], get: Callable[[Panel], Any]) -> list:
             out.append(v)
     return out
 
+
+
+def lock_text(panels: list[Panel], fig) -> str:
+    """The lock indicator, by kind and size — never the internal group id.
+    '🔒 Locked with N other panel(s) (split row)'; '🔒 Mixed: montage, manual
+    lock + unlocked panels'."""
+    groups = [p.lock_group for p in panels]
+    named = list(dict.fromkeys(g for g in groups if g))
+    if not named:
+        return "🔓 Not locked"
+    if len(named) == 1 and all(groups):
+        g = named[0]
+        members = sum(1 for q in fig.panels if q.lock_group == g) if fig else len(panels)
+        others = members - len(panels)
+        if others > 0:
+            return f"🔒 Locked with {others} other panel(s) ({L.lock_kind(g)})"
+        return f"🔒 Locked: the whole group is selected ({members} panels, {L.lock_kind(g)})"
+    kinds = list(dict.fromkeys(L.lock_kind(g) for g in named))
+    return "🔒 Mixed: " + ", ".join(kinds) + (" + unlocked panels" if not all(groups) else "")
 
 class MiniView(QGraphicsView):
     """Whole image (oriented like the panel) + the crop rectangle.
@@ -193,14 +213,7 @@ class PreviewInspector(QScrollArea):
         groups = [p.lock_group for p in self.panels]
         fig = self.tab.current_figure()
         named = sorted({g for g in groups if g})
-        if not named:
-            text = "🔓 Not locked"
-        elif len(named) == 1 and all(groups):
-            n = sum(1 for q in fig.panels if q.lock_group == named[0]) if fig else 0
-            text = f"🔒 Locked: {named[0]} ({n} panel(s) in the group)"
-        else:
-            text = "🔒 Mixed: " + ", ".join(named) + (" + unlocked panels" if not all(groups) else "")
-        self.lock_label = QLabel(text)
+        self.lock_label = QLabel(lock_text(self.panels, fig))
         self.lock_label.setWordWrap(True)
         self.lock_label.setToolTip("Editing a channel's LUT, levels, gamma or invert on a locked "
                                    "panel applies it to the same channel of every panel of the "

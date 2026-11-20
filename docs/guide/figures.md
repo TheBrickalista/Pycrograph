@@ -50,8 +50,7 @@ Unselected panels have a faint dashed outline, never exported.
 
 ## Inspector
 
-- **Preview** — lock (shared levels / LUTs, see
-  {doc}`../concepts/locks-and-insets`), viewport (mini-view with the crop
+- **Preview** — lock (shared levels / LUTs, see {doc}`locks`), viewport (mini-view with the crop
   rectangle; drag to pan, wheel to zoom; zoom %; Fit), rotation and flips,
   T / Z and a max-intensity Z projection, channel controls matched by channel
   index (values that differ between the selected panels show as mixed),

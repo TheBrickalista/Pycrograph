@@ -7,6 +7,38 @@ All notable changes to Pycrograph are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Mixed bit depths in a lock.**
+  - *Lock selection* adds "These images have different bit depths (8-bit:
+    panel 2; 16-bit: panels 1, 3). Equal levels do not mean equal
+    intensities across bit depths or cameras." to its confirmation, and asks
+    even when no setting differs.
+  - Auto-layouts whose new lock group spans images of different bit depths
+    (condition grid, shared rendering) show the warning in the status bar.
+  - New consistency rule `bit_depth` (warning): "lock group (…, panels …):
+    mixes 8-bit and 16-bit images", which selects the panels.
+  - Propagation is unchanged: the typed value stays the reference, clamped
+    per image.
+- **Skipped channels named.** When a locked edit can't reach panels that lack
+  the channel, the status bar says "Channel 3 applied to 2 locked panel(s); 1
+  skipped (no channel 3: panel 4)". Nothing extra is logged
+  (`FigureEditor.last_lock_skipped`, `figures.skipped_note`).
+- Locks guide: case (b) shows the bit-depth warning (new screenshot
+  `locks-depth.png`) and the check; troubleshooting shows the skipped-panel
+  message.
+- Docs: how-to page **Locks, step by step** (`docs/guide/locks.md`). It covers
+  what a lock shares (per channel number) and what stays per panel; the
+  automatic locks (split row, montage, condition grid shared / own
+  rendering); locking by hand (reference panel, confirmation, channel
+  mismatch warning, Unlock, Select group); three worked cases (control vs
+  treated, 8-bit with 16-bit, a different stain in channel 1); locks vs inset
+  links vs *Follow the parent's channels*; the consistency check and the
+  sidecar; and troubleshooting. It is linked from the Figures guide and from
+  *Locks and insets*.
+- `scripts/make_lock_screenshots.py` (reuses the inset script's synthetic
+  images and English locale) regenerates `docs/_static/img/locks-*.png`. It
+  has a smoke test and a locale test.
+- Provenance sidecar: per panel `lock_kind` (*split row*, *montage*,
+  *condition grid*, *manual lock*) next to `lock_group`.
 - Docs: how-to page **Insets, step by step** (`docs/guide/insets.md`). It
   covers creating insets (on one panel or several), replicating them (table
   columns, Same region vs Same size, the registration warning, Keep linked),
@@ -64,6 +96,10 @@ All notable changes to Pycrograph are documented here. The format follows
   keep groups consistent.
 
 ### Fixed
+- Screenshot smoke tests (`test_inset_screenshots.py`,
+  `test_lock_screenshots.py`) no longer depend on platform font metrics. They
+  check that each image is non-null and at least 50 × 50 px; CI on Linux
+  failed on a 400 × 99 confirmation dialog.
 - Replicate-inset dialog: no longer errors when it opens with several target
   sets. A radio button's `toggled` signal fired before the table existed.
 - Linked inset groups could diverge silently: resizing a member on the canvas
@@ -78,6 +114,13 @@ All notable changes to Pycrograph are documented here. The format follows
   divergence (`insets.group_invariant_issues`).
 
 ### Changed
+- **Lock groups are named, never shown by their internal id.**
+  - The Preview tab reads *🔒 Locked with N other panel(s) (split row |
+    montage | condition grid | manual lock)*, and the mixed case lists kinds.
+  - Consistency messages say *lock group (split row, panels 2–4)* and
+    *linked inset group (panels 3–4)* instead of `lock:…` / `grid:…` /
+    `region:…`.
+  - New helpers: `layout.lock_kind`, `panel_numbers` and `lock_group_name`.
 - **Replicate inset dialog is now a checklist.** It lists every panel of the
   figure that can receive the inset (the parent's split / lock group first,
   then figure order). The selected panels are pre-checked, otherwise the

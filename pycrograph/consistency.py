@@ -24,6 +24,8 @@ columns_of) and each lock group.
 | scalebar      | warning  | in a row, a scale bar on some panels but not the others        |
 | channels      | warning  | in a group, the same channel index with a different channel   |
 |               |          | name / wavelength (figures.channel_mismatches)                 |
+| bit_depth     | warning  | a lock group mixes images of different bit depths: equal       |
+|               |          | levels are not equal intensities (selects the group's panels)  |
 | nonlinear     | info     | gamma ≠ 1 on a visible channel                                 |
 | source        | error    | source missing or modified (SHA-256 differs)                   |
 |               | warning  | source changed (size/date; re-hash pending) or hash not        |
@@ -57,7 +59,7 @@ import numpy as np
 from . import layout as L
 from . import viewport as V
 from .display import compute_saturation_stats
-from .figures import LOCKED_FIELDS, channel_mismatches, lock_members, panel_channel
+from .figures import LOCKED_FIELDS, bit_depths, channel_mismatches, lock_members, panel_channel
 from .labels import group_time_unit, resolve_label
 from .models import Figure, ImageRef, Panel, Project
 from .scalebar import ScaleBarUnavailable, bar_geometry
@@ -101,7 +103,7 @@ def groups(figure: Figure) -> list[tuple[str, str, list[Panel]]]:
     for g in dict.fromkeys(p.lock_group for p in figure.panels if p.lock_group):
         members = lock_members(figure, g)
         if len(members) > 1:
-            out.append(("lock", f"lock group {g}", members))
+            out.append(("lock", L.lock_group_name(figure, g), members))
     return out
 
 
@@ -173,6 +175,12 @@ def check_figure(project: Project, figure: Figure,
     # ---- groups: rows, columns, lock groups
     for kind, name, panels in groups(figure):
         issues += _levels(name, panels, images)
+        if kind == "lock":
+            depths = bit_depths(panels, images)
+            if len(depths) > 1:
+                issues.append(Issue("warning", "bit_depth", f"{name}: mixes "
+                                    + " and ".join(f"{b}-bit" for b in depths) + " images",
+                                    tuple(p.id for p in panels)))
         for m in channel_mismatches(panels, images):
             issues.append(Issue("warning", "channels", f"{name}: {m.message()}", m.panel_ids))
         if kind != "row":
