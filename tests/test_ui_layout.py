@@ -175,6 +175,114 @@ def test_dashed_outline_canvas_only(app, setup):
     scene.set_decorations(True)
 
 
+def _item(view, panel_id):
+    return next(it for it in view.figure_scene.panel_items() if it.panel_id == panel_id)
+
+
+def _panel_render(scene, item) -> QImage:
+    """The panel and 1 mm around it (its outline is drawn on its edge)."""
+    return _render(scene, item.mapRectToScene(item.rect()).adjusted(-1, -1, 1, 1))
+
+
+def _without_outline(scene, item) -> QImage:
+    """The same render with this panel's outline forced off (the page border,
+    also a decoration, may share the panel's edge)."""
+    item.shows_outline = lambda: False
+    try:
+        return _panel_render(scene, item)
+    finally:
+        del item.shows_outline
+
+
+def test_no_outline_by_default_hover_shows_it(app, setup):
+    w, ids, (pa, pb, pz) = setup
+    tab, view = w.figures_tab, w.figures_tab.canvas
+    scene = view.figure_scene
+    assert not w.prefs.canvas_outlines_all and w.prefs.canvas_outlines_empty   # defaults
+    assert not tab.outlines_btn.isChecked() and tab.outlines_btn.text() == "Outlines"
+    view.select_ids([])
+    item = _item(view, pb.id)
+    assert not item.has_empty_area()                      # full image, panel covered
+    assert not item.shows_outline()
+    assert _panel_render(scene, item) == _without_outline(scene, item)   # nothing painted
+    # Hover: the outline appears, and goes when the mouse leaves.
+    centre = view.mapFromScene(item.mapToScene(item.rect().center()))
+    _mouse(view, QEvent.MouseMove, centre, Qt.NoButton, Qt.NoButton)
+    app.processEvents()
+    assert item.hovered and item.shows_outline()
+    assert _panel_render(scene, item) != _without_outline(scene, item)
+    _mouse(view, QEvent.MouseMove, QPoint(2, 2), Qt.NoButton, Qt.NoButton)   # canvas background
+    app.processEvents()
+    assert not item.hovered and not item.shows_outline()
+    # "All panel outlines" (the button itself): every unselected panel.
+    tab.outlines_btn.click()
+    assert tab.a_outlines_all.isChecked() and scene.outline_all
+    assert item.shows_outline() and _panel_render(scene, item) != _without_outline(scene, item)
+    view.select_ids([pb.id])
+    assert not item.shows_outline()                       # selection frame instead
+    tab.outlines_btn.click()
+    assert not scene.outline_all
+
+
+def test_empty_area_outline_and_its_option(app, setup):
+    w, ids, (pa, pb, pz) = setup
+    tab, view = w.figures_tab, w.figures_tab.canvas
+    scene = view.figure_scene
+    view.select_ids([pa.id])
+    tab.inspector.zoom_by(0.5)                            # crop beyond the image
+    view.select_ids([])
+    item = _item(view, pa.id)
+    assert item.has_empty_area() and item.shows_outline()
+    assert _panel_render(scene, item) != _without_outline(scene, item)
+    tab.a_outlines_empty.setChecked(False)                # menu: "Panels with empty area"
+    assert not scene.outline_empty and not item.shows_outline()
+    assert _panel_render(scene, item) == _without_outline(scene, item)
+    assert not _item(view, pb.id).has_empty_area()
+
+
+def test_outline_options_persist_and_are_not_project_changes(app, setup, workspace):
+    from pycrograph.preferences import load_preferences
+    from pycrograph.ui.main_window import MainWindow
+    w, ids, (pa, pb, pz) = setup
+    tab = w.figures_tab
+    n_log = len(w.project.operation_log)
+    editor = tab.current_editor()
+    n_undo = len(editor.history._undo)
+    tab.a_outlines_all.setChecked(True)
+    tab.a_outlines_empty.setChecked(False)
+    assert len(w.project.operation_log) == n_log          # not logged
+    assert len(editor.history._undo) == n_undo                     # not undoable
+    saved = load_preferences(workspace.root)
+    assert saved.canvas_outlines_all and not saved.canvas_outlines_empty
+    w2 = MainWindow(workspace, auto_open=False)           # next session
+    try:
+        t2 = w2.figures_tab
+        assert t2.a_outlines_all.isChecked() and t2.outlines_btn.isChecked()
+        assert not t2.a_outlines_empty.isChecked()
+        sc = t2.canvas.figure_scene
+        assert sc.outline_all and not sc.outline_empty
+    finally:
+        w2.close()
+
+
+def test_export_has_no_outlines_whatever_the_toggle(app, setup):
+    from pycrograph.ui.scene_builder import export_scene
+    w, ids, (pa, pb, pz) = setup
+    tab = w.figures_tab
+    tab.a_outlines_all.setChecked(True)
+    view = tab.canvas
+    view.select_ids([pa.id])
+    tab.inspector.zoom_by(0.5)                            # empty area too
+    scene = export_scene(w.project, tab.current_figure(), w.renderer)
+    items = scene.panel_items()
+    assert items and not any(it.shows_outline() for it in items)
+    it = next(i for i in items if i.panel_id == pa.id)
+    assert it.has_empty_area()
+    before = _panel_render(scene, it)
+    scene.outline_all = True                              # even forced: decorations are off
+    assert _panel_render(scene, it) == before
+
+
 def test_page_setup_and_presets(app, setup):
     w, ids, (pa, pb, pz) = setup
     tab, prefs_tab = w.figures_tab, w.preferences_tab

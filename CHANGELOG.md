@@ -139,6 +139,19 @@ All notable changes to Pycrograph are documented here. The format follows
   divergence (`insets.group_invariant_issues`).
 
 ### Changed
+- **Figures canvas: panel outlines are optional.** Unselected panels no
+  longer have a dashed outline by default. It appears:
+  - while the mouse hovers the panel;
+  - on every panel with the new **Outlines** toolbar button (next to
+    Fit / + / −), off by default;
+  - on panels whose crop extends beyond the image (page background inside
+    the panel). This one is on by default; untick *Panels with empty area*
+    in the button's menu to hide it.
+
+  Both options are application preferences (`preferences.json`), remembered
+  across sessions. They are not project data, not logged and not undoable.
+  Exports never show outlines. Selection, handles, guides and inset
+  rectangles are unchanged.
 - **The former Home tab is now the Projects tab** (`ui/projects_tab.py`,
   `ProjectsTab`), with the same behaviour. Tab order: Home, Projects, Library,
   Figures, Preferences, About. The guide page `guide/home.md` became
