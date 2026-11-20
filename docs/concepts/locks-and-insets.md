@@ -2,6 +2,8 @@
 
 ## Locks
 
+How to: {doc}`../guide/locks` (step by step, with worked cases).
+
 Panels in one **lock group** share, per channel index, **black, white, gamma,
 LUT and invert** — never visibility, T / Z, projection, crop, orientation or
 labels. Editing channel *i* on a locked panel applies it to channel *i* of every

@@ -98,7 +98,8 @@ def test_channel_mismatch_in_lock_group(env):
     assert not codes(run(p, fig), "channels")
     a.lock_group = b.lock_group = "lock:x"
     [i] = codes(run(p, fig), "channels")
-    assert "lock group lock:x" in i.message and "TxRed" in i.message
+    assert i.message.startswith("lock group (manual lock, panels 1–2): ") and "TxRed" in i.message
+    assert "lock:x" not in i.message
 
 
 def test_per_panel_rules(env):

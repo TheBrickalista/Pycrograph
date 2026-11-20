@@ -40,6 +40,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Iterable, Iterator, Optional
 
 from . import insets as I
+from . import layout as L
 from . import viewport
 from .models import (
     ChannelSettings, Crop, Figure, ImageRef, PageSetup, Panel, PanelBorder, PanelLabel, Project,
@@ -402,6 +403,7 @@ class FigureEditor:
         pre = {pid: locked_state(p) for pid in panel_ids
                if (p := self.figure.panel(pid)) is not None and p.lock_group}
         self.last_propagated: list[str] = []      # changed through a lock group
+        self.last_lock_skipped: dict[str, set[int]] = {}   # members lacking the channel(s)
         self.last_synced: list[str] = []          # insets that followed their parent
         self.last_region: list[str] = []          # linked-group members updated
         applied = skipped = 0
@@ -418,7 +420,8 @@ class FigureEditor:
                     applied += 1
             if propagate and pre:
                 self.last_propagated = propagate_locks(self.figure, self.project.images,
-                                                       panel_ids, pre, lock_values)
+                                                       panel_ids, pre, lock_values,
+                                                       self.last_lock_skipped)
             # Insets following their parent take its T/Z / rendering now, in
             # the same gesture (one log entry per inset changed).
             for pid in panel_ids + self.last_propagated:
@@ -581,11 +584,14 @@ def apply_locked(panel: Panel, ref: ImageRef, values: dict[tuple[int, str], Any]
 
 
 def propagate_locks(figure: Figure, images: dict[str, ImageRef], edited: list[str],
-                    pre: dict[str, dict], intended: Optional[dict] = None) -> list[str]:
+                    pre: dict[str, dict], intended: Optional[dict] = None,
+                    skipped: Optional[dict[str, set[int]]] = None) -> list[str]:
     """After an edit: for each lock group, the locked channel fields that
     changed on the FIRST edited panel of the group (or `intended` values
     for those fields) are applied to every other member. Returns the ids
-    of members changed that were not themselves edited."""
+    of members changed that were not themselves edited. `skipped` (if
+    given) receives {member id: channel indices it lacks} for members the
+    change could not reach — nothing is changed or logged on them."""
     done_groups: set[str] = set()
     propagated: list[str] = []
     for pid in edited:
@@ -605,6 +611,9 @@ def propagate_locks(figure: Figure, images: dict[str, ImageRef], edited: list[st
             ref = images.get(m.image_id)
             if m.id == p.id or ref is None:
                 continue
+            lacking = {idx for idx, _f in changed if idx >= ref.metadata.shape.C}
+            if lacking and skipped is not None and m.id not in edited:
+                skipped.setdefault(m.id, set()).update(lacking)
             before = locked_state(m)
             apply_locked(m, ref, changed)
             if locked_state(m) != before and m.id not in edited:
@@ -965,6 +974,49 @@ def channel_mismatches(panels: Iterable[Panel], images: dict[str, ImageRef]) -> 
             out.append(ChannelMismatch(idx, tuple(ident), tuple(i for ids in ident.values()
                                                                 for i in ids)))
     return out
+
+
+def bit_depths(panels: Iterable[Panel], images: dict[str, ImageRef]) -> dict[int, list[Panel]]:
+    """{bit depth: panels} (panels whose image is in the project)."""
+    out: dict[int, list[Panel]] = {}
+    for p in panels:
+        ref = images.get(p.image_id)
+        if ref is not None:
+            out.setdefault(ref.metadata.bit_depth, []).append(p)
+    return dict(sorted(out.items()))
+
+
+def bit_depth_warning(figure: Figure, panels: Iterable[Panel], images: dict[str, ImageRef]) -> str:
+    """'' if every image has the same bit depth, else 'These images have
+    different bit depths (8-bit: panel 2; 16-bit: panels 1, 3). Equal levels
+    do not mean equal intensities across bit depths or cameras.'"""
+    depths = bit_depths(panels, images)
+    if len(depths) < 2:
+        return ""
+    parts = "; ".join(f"{b}-bit: {L.panel_numbers(figure, ps)}" for b, ps in depths.items())
+    return (f"These images have different bit depths ({parts}). Equal levels do not mean "
+            "equal intensities across bit depths or cameras.")
+
+
+def skipped_note(figure: Figure, skipped: dict[str, set[int]], n_applied: int) -> str:
+    """'Channel 3 applied to 2 locked panel(s); 1 skipped (no channel 3:
+    panel 4)' — or, for several channels, 'Applied to 2 locked panel(s); 2
+    skipped (no channel 2: panel 5; no channel 3: panels 4–5)'."""
+    if not skipped:
+        return ""
+    by_channel: dict[int, list[Panel]] = {}
+    for pid, idxs in skipped.items():
+        p = figure.panel(pid)
+        if p is not None:
+            for idx in idxs:
+                by_channel.setdefault(idx, []).append(p)
+    if not by_channel:
+        return ""
+    head = (f"Channel {next(iter(by_channel)) + 1} applied" if len(by_channel) == 1
+            else "Applied")
+    why = "; ".join(f"no channel {idx + 1}: {L.panel_numbers(figure, ps)}"
+                    for idx, ps in sorted(by_channel.items()))
+    return f"{head} to {n_applied} locked panel(s); {len(skipped)} skipped ({why})"
 
 
 def locked_settings_differ(panels: list[Panel]) -> list[Panel]:

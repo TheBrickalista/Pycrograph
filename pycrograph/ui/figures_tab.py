@@ -396,8 +396,12 @@ class FiguresTab(QWidget):
         notes = []
         if skipped:
             notes.append(f"{skipped} panel(s) skipped" + (f" ({what})" if what else ""))
-        if ed.last_propagated:
+        if ed.last_lock_skipped:          # say which locked panels lack the channel
+            notes.append(F.skipped_note(ed.figure, ed.last_lock_skipped,
+                                        len(ed.last_propagated)))
+        elif ed.last_propagated:
             notes.append(f"also applied to {len(ed.last_propagated)} locked panel(s)")
+        if ed.last_propagated:
             mism = self.mismatch_warning(ids + ed.last_propagated)
             if mism and final:
                 notes.append(mism)
@@ -657,6 +661,9 @@ class FiguresTab(QWidget):
             self.current_figure().panels.extend(new)
         self._layout(fn, f"figure.layout.montage_{axis}", f"Montage {axis.upper()}",
                      select_new=True)
+        warn = self.new_groups_bit_depth_warning()
+        if warn:
+            self.status_message.emit(f"Montage {axis.upper()}: {warn}")
 
     def montage_dialog(self) -> None:
         sel = self.selected_panels()
@@ -685,6 +692,17 @@ class FiguresTab(QWidget):
         if ok and indices:
             self.montage(axis.lower(), indices, direction)
 
+    def new_groups_bit_depth_warning(self) -> str:
+        """After an auto-layout (its new panels selected): '⚠ These images
+        have different bit depths (…)' for each new lock group that spans
+        images of different bit depths, else ''."""
+        fig = self.current_figure()
+        if fig is None or self.project is None:
+            return ""
+        groups = dict.fromkeys(p.lock_group for p in self.selected_panels() if p.lock_group)
+        warns = [F.bit_depth_warning(fig, F.lock_members(fig, g), self.project.images) for g in groups]
+        return "; ".join("⚠ " + w for w in warns if w)
+
     def condition_grid(self, own_rendering: bool = False,
                        row_label: Optional[str] = "[image]") -> None:
         """Rows = images of the selected panels (figure order), columns =
@@ -707,8 +725,11 @@ class FiguresTab(QWidget):
             self.current_figure().panels.extend(p for row in rows for p in row if p is not None)
         self._layout(fn, "figure.layout.condition_grid", "Condition grid", select_new=True)
         mism = self.mismatch_warning(self.canvas.selected_ids())
-        if mism and not own_rendering:
-            self.status_message.emit(f"Condition grid (shared rendering): {mism}")
+        warn = [w for w in ((mism if not own_rendering else ""),
+                            self.new_groups_bit_depth_warning()) if w]
+        if warn:
+            what = "shared" if not own_rendering else "own"
+            self.status_message.emit(f"Condition grid ({what} rendering): " + "; ".join(warn))
 
     def condition_grid_dialog(self, own_rendering: bool = False) -> None:
         sel = self.selected_panels()
@@ -1290,11 +1311,15 @@ class FiguresTab(QWidget):
         if len(sel) < 2:
             return None
         differ = F.locked_settings_differ(sel)
-        if differ:
+        depth = F.bit_depth_warning(self.current_figure(), sel, self.project.images)
+        if differ or depth:                # mixed bit depths: ask even if nothing differs
             ref0 = self.ref(sel[0])
             text = (f"{len(differ)} panel(s) will take the levels/LUTs of panel "
                     f"{self.current_figure().panels.index(sel[0]) + 1} "
-                    f"({ref0.filename if ref0 else '?'}). Lock?")
+                    f"({ref0.filename if ref0 else '?'}). Lock?" if differ
+                    else f"Lock these {len(sel)} panels?")
+            if depth:
+                text += "\n\n⚠ " + depth
             mism = self.mismatch_warning([p.id for p in sel])
             if mism:
                 text += "\n\n" + mism
@@ -1307,9 +1332,10 @@ class FiguresTab(QWidget):
         self._layout(lambda ps, _r: F.lock_panels(ps, images, group), "figure.lock.set",
                      "Lock", min_sel=2)
         self.inspector.set_panels(self.selected_panels())
-        mism = self.mismatch_warning([p.id for p in sel])
-        if mism:
-            self.status_message.emit(f"Locked: {mism}")
+        warn = [w for w in (self.mismatch_warning([p.id for p in sel]),
+                            ("⚠ " + depth) if depth else "") if w]
+        if warn:
+            self.status_message.emit("Locked: " + "; ".join(warn))
         return group
 
     def unlock_selection(self) -> None:

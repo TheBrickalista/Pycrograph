@@ -22,6 +22,7 @@ guide/home
 guide/library
 guide/figures
 guide/insets
+guide/locks
 guide/preferences
 guide/about
 ```

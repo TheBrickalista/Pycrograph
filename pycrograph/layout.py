@@ -33,7 +33,7 @@ import uuid
 from typing import Iterable, Literal, Optional, Sequence
 
 from . import viewport as V
-from .models import ImageRef, Panel
+from .models import Figure, ImageRef, Panel
 
 Edge = Literal["left", "right", "top", "bottom", "hcentre", "vcentre"]
 DEFAULT_GAP_MM = 2.0
@@ -100,6 +100,41 @@ def distribute(panels: Sequence[Panel], axis: Literal["h", "v"]) -> bool:
             p.y_mm = _r(y)
             y += p.height_mm + gap
     return True
+
+
+# ---------------------------------------------------- readable group names
+# Internal group ids ("split:3f9a…", "grid:…:row2", "lock:…", "region:…") are
+# never shown: the UI and reports name a group by its kind and its panels.
+LOCK_KINDS = {"split": "split row", "montage": "montage", "grid": "condition grid",
+              "lock": "manual lock"}
+
+
+def lock_kind(group: Optional[str]) -> str:
+    """'split row' | 'montage' | 'condition grid' | 'manual lock' (from the
+    group id's prefix; anything unknown is a manual lock)."""
+    return LOCK_KINDS.get((group or "").split(":", 1)[0], "manual lock")
+
+
+def panel_numbers(figure: Figure, panels: Iterable[Panel]) -> str:
+    """'panel 3', 'panels 2–4', 'panels 1, 3, 5–7' (1-based figure order)."""
+    order = {p.id: i for i, p in enumerate(figure.panels, start=1)}
+    nums = sorted({order[p.id] for p in panels if p.id in order})
+    if not nums:
+        return "no panel"
+    runs: list[list[int]] = []
+    for n in nums:
+        if runs and n == runs[-1][1] + 1:
+            runs[-1][1] = n
+        else:
+            runs.append([n, n])
+    text = ", ".join(f"{a}" if a == b else f"{a}–{b}" for a, b in runs)
+    return f"panel {text}" if len(nums) == 1 else f"panels {text}"
+
+
+def lock_group_name(figure: Figure, group: str) -> str:
+    """'lock group (split row, panels 2–4)'."""
+    members = [p for p in figure.panels if p.lock_group == group]
+    return f"lock group ({lock_kind(group)}, {panel_numbers(figure, members)})"
 
 
 def rows_of(panels: Sequence[Panel]) -> list[list[Panel]]:

@@ -198,7 +198,8 @@ def test_lock_ui_and_condition_grid_labels(app, setup):
     group = tab.lock_selection(confirm=lambda text: asked.append(text) or True)
     assert asked and "will take the levels/LUTs of panel 1" in asked[0]
     assert group and pa.lock_group == pb.lock_group == group
-    assert group in insp.lock_label.text()
+    assert insp.lock_label.text() == "🔒 Locked: the whole group is selected (2 panels, manual lock)"
+    assert group not in insp.lock_label.text()
     # A channel edit through the Preview tab reaches the locked panel.
     view.select_ids([pa.id])
     n = len(w.project.operation_log)
@@ -230,3 +231,23 @@ def test_lock_ui_and_condition_grid_labels(app, setup):
             sr = item.mapRectToScene(r)
             assert sr.left() >= -1e-6 and sr.top() >= above
     assert len({q.lock_group for q in new}) == 1
+
+
+def test_lock_label_kinds_never_ids(app, setup):
+    from pycrograph.ui.panel_inspector import lock_text
+    w, ids, (pa, pb, pc) = setup
+    fig = w.figures_tab.current_figure()
+    pa.lock_group = pb.lock_group = pc.lock_group = "split:abc123"
+    assert lock_text([pa], fig) == "🔒 Locked with 2 other panel(s) (split row)"
+    pc.lock_group = "grid:abc123:row1"
+    assert lock_text([pa], fig) == "🔒 Locked with 1 other panel(s) (split row)"
+    assert lock_text([pa, pc], fig) == "🔒 Mixed: split row, condition grid"
+    pb.lock_group = None
+    assert lock_text([pa, pb, pc], fig) == "🔒 Mixed: split row, condition grid + unlocked panels"
+    for text in (lock_text([pa], fig), lock_text([pa, pc], fig)):
+        assert "abc123" not in text and "split:" not in text and "grid:" not in text
+    # Through the real inspector.
+    pa.lock_group = pb.lock_group = "lock:zz9"
+    pc.lock_group = None
+    w.figures_tab.canvas.select_ids([pa.id])
+    assert w.figures_tab.inspector.lock_label.text() == "🔒 Locked with 1 other panel(s) (manual lock)"

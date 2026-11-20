@@ -52,7 +52,7 @@ import math
 from typing import Callable, Iterable, Literal, Optional, Sequence
 
 from . import viewport as V
-from .layout import UNIT_TO_UM
+from .layout import UNIT_TO_UM, panel_numbers
 from .models import Crop, Figure, ImageRef, InsetStyle, Panel, ZProjection
 
 Compatibility = Literal["same_image", "same_geometry", "different"]
@@ -583,6 +583,6 @@ def group_invariant_issues(figure: Figure, images: dict[str, ImageRef]) -> list[
                         and math.isclose(a[3] * sa[1], b[3] * sb[1], rel_tol=1e-6)):
                     problems.append("region size")
         if problems:
-            out.append((f"inset group {g}: members differ in "
+            out.append((f"linked inset group ({panel_numbers(figure, members)}): members differ in "
                         + ", ".join(dict.fromkeys(problems)), [m.id for m in members]))
     return out
