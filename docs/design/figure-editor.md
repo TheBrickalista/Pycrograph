@@ -311,14 +311,18 @@ Bump `PROJECT_FORMAT_VERSION` to 2 with a migration (`Figure.page` → `PageSetu
    consistency check adds three rules beyond §2.9: content past the page edge (outside labels
    estimated from the font size), scale bar longer than its panel, unresolved label tokens.
 
-## 7. Open decisions
+## 7. Decisions (agreed 2026-11-18)
 
 1. Free-angle rotation: exclude (v1 proposal) or allow as a flagged resampling step?
+   **Decided: excluded.** Rotation is 0 / 90 / 180 / 270° plus horizontal / vertical
+   flips only, so no pixel is ever resampled by an orientation change.
 2. Panel settings vs image defaults: snapshot at creation (proposal) or live link to the
    library settings until the panel is edited?
+   **Decided: snapshot at creation.** A panel copies the image's display settings when it
+   is added; later library edits do not change it.
 3. Lock groups: rely on multi-selection only (OMERO), or also keep persistent "linked"
    rows/columns that propagate edits automatically (handoff §7.2 "lock levels")?
-   **Decided: both** — multi-select for editing, `lock_group` for propagation + consistency
+   **Decided (as written here): both** — multi-select for editing, `lock_group` for propagation + consistency
    check. **Rule**: a lock shares **black, white, gamma, LUT and invert per channel index**,
    never visibility, T/Z, projection, crop, orientation or labels. An edit of channel *i* on
    a locked panel applies to channel *i* of every panel of its group, values clamped to each
@@ -329,6 +333,7 @@ Bump `PROJECT_FORMAT_VERSION` to 2 with a migration (`Figure.page` → `PageSetu
    level clamp is not an edit). A condition grid with shared rendering is one group; one that
    keeps each image's rendering has one group per row.
 4. One figure per tab vs a figure dropdown in a single Figures tab.
+   **Decided: one Figures tab with a figure dropdown** (New / Rename next to it).
 
 ## Sources
 

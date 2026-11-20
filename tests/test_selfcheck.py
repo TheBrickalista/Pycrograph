@@ -16,7 +16,8 @@ def test_selfcheck_passes_and_writes_report(tmp_path):
     text = out.read_text()
     assert text.rstrip().endswith("selfcheck passed")
     assert "OK   register → render → export" in text and "lossless" in text
-    assert "OK   bundled resources: pycrograph_logo.png, pycrograph_icon.png" in text
+    assert ("OK   bundled resources: pycrograph_logo.png, pycrograph_icon.png, LICENSE.txt, "
+            "THIRD_PARTY_NOTICES.txt, CITATION.cff") in text
 
 
 def test_selfcheck_fails_without_the_icon(tmp_path, monkeypatch):

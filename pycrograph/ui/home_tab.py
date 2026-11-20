@@ -29,11 +29,10 @@ from PySide6.QtWidgets import (
 )
 
 from .. import __version__
+from ..credits import copyright_html
 from ..selfcheck import logo_path
 
 LOGO_WIDTH = 320                     # logical pixels (buttons visible in 1280×800)
-AUTHORS = "Etienne Boulter"          # as in CITATION.cff (test_ui_home checks)
-INSTITUTION = "IRCAN, Inserm U1081"
 SUBTITLE = ("Publication figures from fluorescence microscopy, with full provenance: "
             "raw files never modified, SHA-256 verification, hash-chained log and "
             "integrity reports.")
@@ -145,7 +144,7 @@ class HomeTab(QScrollArea):
         root.addWidget(self.subtitle)
 
         self.copyright = QLabel(
-            f"<p>Copyright &copy; 2026 {AUTHORS}, {INSTITUTION}</p>"
+            f"<p>{copyright_html()}</p>"
             "<p>This software is distributed under the <b>GNU General Public License v3 "
             "(GPLv3)</b>.<br>This software is provided without warranty of any kind.</p>")
         self.copyright.setTextFormat(Qt.RichText)

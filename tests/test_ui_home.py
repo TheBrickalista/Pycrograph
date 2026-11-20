@@ -10,7 +10,7 @@ import pytest
 
 pytest.importorskip("PySide6.QtWidgets")
 
-from PySide6.QtGui import QColor, QPalette  # noqa: E402
+from PySide6.QtGui import QColor, QPalette, QTextDocument  # noqa: E402
 from PySide6.QtWidgets import (  # noqa: E402
     QApplication, QFileDialog, QInputDialog, QMessageBox, QPushButton,
 )
@@ -19,6 +19,15 @@ from pycrograph import __version__  # noqa: E402
 from pycrograph.ui import home_tab as H  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
+COPYRIGHT = ("Copyright © 2026 Etienne Boulter, Chloé C. Féral — "
+             "Université Côte d'Azur, CNRS, Inserm, IRCAN")
+
+
+def plain(rich: str) -> str:
+    """What a rich-text label shows (entities decoded, one line per block)."""
+    doc = QTextDocument()
+    doc.setHtml(rich)
+    return doc.toPlainText()
 
 
 @pytest.fixture(scope="module")
@@ -48,16 +57,25 @@ def test_home_shows_logo_version_and_licence(window):
     assert pm.width() / pm.devicePixelRatio() == pytest.approx(H.LOGO_WIDTH, abs=1)
     assert home.title.text() == f"Version {__version__}"
     assert home.subtitle.text() == H.SUBTITLE
-    text = home.copyright.text()
+    text = plain(home.copyright.text())
     assert "GNU General Public License v3" in text and "without warranty" in text
-    assert "IRCAN" in text and "Inserm U1081" in text
+    assert text.splitlines()[0] == COPYRIGHT
 
 
 def test_copyright_names_the_citation_authors(window):
     import yaml
     cff = yaml.safe_load((ROOT / "CITATION.cff").read_text(encoding="utf-8"))
+    text = plain(window.home.copyright.text())
     for a in cff["authors"]:
-        assert f"{a['given-names']} {a['family-names']}" in window.home.copyright.text()
+        assert f"{a['given-names']} {a['family-names']}" in text
+
+
+def test_about_tab_shows_the_same_copyright(window):
+    about = window.about_tab
+    about.credits_btn.click()
+    assert about.view.toPlainText().splitlines()[0] == f"Pycrograph — {COPYRIGHT}"
+    about.repo_btn.click()
+    assert "Boulter E, Féral CC (2026). Pycrograph (version" in about.view.toPlainText()
 
 
 def test_logo_pixmap_is_hidpi_sharp(app):

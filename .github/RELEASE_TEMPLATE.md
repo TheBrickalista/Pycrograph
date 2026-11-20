@@ -3,8 +3,13 @@ SHARED-CORE candidate (from PysternBlot: .github/RELEASE_TEMPLATE.md) — adapte
 Release-notes header for Pycrograph. Paste at the top of each GitHub release's
 notes, replace every VERSION with the release number (e.g. 0.2.0 or 0.2.0b1,
 without the "v"), then add the changes from CHANGELOG.md below it.
-For a beta / release candidate, tick "Set as a pre-release": the signed apps
-are attached as usual, but nothing is uploaded to PyPI (delete the pip row).
+Every 0.x release is a beta: publish it with "Set as a pre-release" ticked
+(also for betas / release candidates such as 0.2.0b1). The signed apps are
+attached as usual, but publish.yml skips the PyPI upload for pre-releases
+(delete the pip row). Zenodo archives every published release, 0.x
+pre-releases included: check that the new record (and its DOI) appears on
+Zenodo; the first one's concept DOI goes into CITATION.cff (`doi:`), README
+and docs. From 1.0.0, stable releases also go to PyPI.
 Not read by any workflow.
 -->
 

@@ -32,21 +32,24 @@ from typing import Callable, Optional
 
 LOGO = "pycrograph_logo.png"      # full logo + wordmark (Home tab)
 ICON = "pycrograph_icon.png"      # PG mark only (window / app icon)
+LICENSE_TXT = "LICENSE.txt"       # copy of the repository LICENSE (About > Legal)
+NOTICES = "THIRD_PARTY_NOTICES.txt"   # scripts/make_third_party_notices.py
+CITATION = "CITATION.cff"         # copy of the repository CITATION.cff (About > Repository)
 # Both are rendered from docs/_static/logo/*.svg with rsvg: QtSvg cannot draw
 # the logo's clipPath / blur, so the .svg files are never loaded in Qt.
 
 
-def _resource(name: str) -> Path:
+def resource_path(name: str) -> Path:
     from importlib.resources import files
     return Path(str(files("pycrograph.resources").joinpath(name)))
 
 
 def logo_path() -> Path:
-    return _resource(LOGO)
+    return resource_path(LOGO)
 
 
 def icon_path() -> Path:
-    return _resource(ICON)
+    return resource_path(ICON)
 
 
 def run_selfcheck(out: Optional[str] = None) -> int:
@@ -75,9 +78,15 @@ def run_selfcheck(out: Optional[str] = None) -> int:
 
     def resources() -> str:
         found = []
-        for p in (logo_path(), icon_path()):
+        for name in (LOGO, ICON, LICENSE_TXT, NOTICES, CITATION):
+            p = resource_path(name)
             assert p.is_file() and p.stat().st_size > 1000, f"missing {p}"
             found.append(p.name)
+        lic = resource_path(LICENSE_TXT).read_text(encoding="utf-8")
+        assert "GNU GENERAL PUBLIC LICENSE" in lic and "Version 3" in lic, "LICENSE.txt is not the GPLv3"
+        notices = resource_path(NOTICES).read_text(encoding="utf-8")
+        for needle in ("Package: PySide6 ", "GNU LESSER GENERAL PUBLIC LICENSE", "Package: numpy "):
+            assert needle in notices, f"{NOTICES}: no {needle.strip()!r}"
         return ", ".join(found)
 
     def qt() -> str:

@@ -9,6 +9,7 @@ import re
 import tomllib
 from pathlib import Path
 
+import pytest
 import yaml
 
 import pycrograph
@@ -64,6 +65,16 @@ def test_shared_core_markers_present():
                 ".github/workflows/publish.yml", ".github/macos/entitlements.plist",
                 "ci/build-constraints.in"):
         assert "SHARED-CORE candidate (from PysternBlot" in (ROOT / rel).read_text(encoding="utf-8"), rel
+
+
+@pytest.mark.parametrize("bundled,source", [("LICENSE.txt", "LICENSE"),
+                                            ("CITATION.cff", "CITATION.cff")])
+def test_bundled_copies_identical_to_repository_files(bundled, source):
+    """pycrograph/resources keeps tracked copies (shown in the About tab):
+    after editing the repository file, copy it over."""
+    copy = ROOT / "pycrograph" / "resources" / bundled
+    assert copy.read_bytes() == (ROOT / source).read_bytes(), (
+        f"cp {source} pycrograph/resources/{bundled}")
 
 
 def test_release_files_present():

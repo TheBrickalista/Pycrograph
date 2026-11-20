@@ -220,6 +220,14 @@ def test_app_builds(name, asset):
     # App icon (.icns / .ico) from the PG mark, never the logo with its wordmark.
     assert "pycrograph/resources/pycrograph_icon.png" in text
     assert "pycrograph_logo.png" not in text
+    # Licence + third-party notices: regenerated from the locked environment
+    # before PyInstaller, bundled with the resources folder.
+    steps = [step for _job, step in _steps(WORKFLOW_DIR / name)]
+    names = [step.get("name", "") for step in steps]
+    notices = next(i for i, s in enumerate(steps)
+                   if "scripts/make_third_party_notices.py" in str(s.get("run", "")))
+    build = next(i for i, n in enumerate(names) if "PyInstaller" in n)
+    assert notices < build
     for job_id, step in _steps(WORKFLOW_DIR / name):
         if str(step.get("uses", "")).startswith("softprops/action-gh-release@"):
             assert step["if"] == "github.event_name == 'release'"

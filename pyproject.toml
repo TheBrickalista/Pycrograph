@@ -10,7 +10,8 @@ readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "GPL-3.0-only" }
 authors = [
-  { name = "Etienne Boulter" }
+  { name = "Etienne Boulter" },
+  { name = "Chloé C. Féral" }
 ]
 keywords = [
   "microscopy",
@@ -22,7 +23,7 @@ keywords = [
   "bioimaging"
 ]
 classifiers = [
-  "Development Status :: 2 - Pre-Alpha",
+  "Development Status :: 4 - Beta",
   "Intended Audience :: Science/Research",
   "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
   "Operating System :: OS Independent",

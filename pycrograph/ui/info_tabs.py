@@ -6,7 +6,8 @@
 # the Free Software Foundation, version 3 of the License.
 
 """Preferences tab (journal page presets as editable data, default preset
-for new figures) and About tab."""
+for new figures) and About tab (Legal / Copyright & Credits / Repository,
+as in PysternBlot)."""
 
 from __future__ import annotations
 
@@ -14,14 +15,17 @@ import html
 from typing import Callable, Optional
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QFont, QFontDatabase, QFontInfo, QTextCursor
 from PySide6.QtWidgets import (
-    QAbstractItemView, QComboBox, QHBoxLayout, QHeaderView, QLabel, QPushButton, QTableWidget,
-    QTableWidgetItem, QVBoxLayout, QWidget,
+    QAbstractItemView, QButtonGroup, QComboBox, QHBoxLayout, QHeaderView, QLabel,
+    QPlainTextEdit, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
 from .. import __version__
+from ..credits import credits_text, repository_text
 from ..models import PagePreset
 from ..preferences import Preferences, builtin_presets
+from ..selfcheck import CITATION, LICENSE_TXT, NOTICES, resource_path
 
 # (field, header, type)
 PRESET_COLUMNS = (("name", "Name", str), ("width_mm", "Width (mm)", float),
@@ -177,27 +181,75 @@ class PreferencesTab(QWidget):
         self.reload()
 
 
+def fixed_font() -> QFont:
+    """The system's fixed-pitch font, or a known monospace family when the
+    platform answers with a proportional one."""
+    f = QFontDatabase.systemFont(QFontDatabase.FixedFont)
+    if QFontInfo(f).fixedPitch():
+        return f
+    for family in ("Menlo", "Consolas", "DejaVu Sans Mono", "Courier New"):
+        g = QFont(family, f.pointSize())
+        g.setStyleHint(QFont.TypeWriter)
+        if QFontInfo(g).fixedPitch():
+            return g
+    f.setStyleHint(QFont.TypeWriter)
+    return f
+
+
+def _resource_text(name: str) -> Optional[str]:
+    try:
+        return resource_path(name).read_text(encoding="utf-8")
+    except OSError:
+        return None
+
+
 class AboutTab(QWidget):
+    """As PysternBlot's About tab: a title, then Legal / Copyright & Credits
+    / Repository buttons over a read-only text view (Legal first)."""
+
+    LICENSE_MISSING = ("License file not found.\n"
+                       "Pycrograph is licensed under the GNU General Public License v3.0 only:\n"
+                       "https://www.gnu.org/licenses/gpl-3.0.html")
+
     def __init__(self, parent=None):
         super().__init__(parent)
         lay = QVBoxLayout(self)
         lay.setContentsMargins(16, 16, 16, 16)
-        self.text = QLabel(about_html())
-        self.text.setTextFormat(Qt.RichText)
-        self.text.setWordWrap(True)
-        self.text.setOpenExternalLinks(True)
-        self.text.setTextInteractionFlags(Qt.TextBrowserInteraction)
-        lay.addWidget(self.text)
-        lay.addStretch(1)
+        lay.setSpacing(10)
+        self.title = QLabel(f"<h3>About Pycrograph {html.escape(__version__)}</h3>")
+        self.title.setTextFormat(Qt.RichText)
+        lay.addWidget(self.title)
 
+        row = QHBoxLayout()
+        self.buttons = QButtonGroup(self)
+        self.legal_btn = QPushButton("Legal")
+        self.credits_btn = QPushButton("Copyright && Credits")        # "&&": a literal "&"
+        self.repo_btn = QPushButton("Repository")
+        for b, slot in ((self.legal_btn, self.show_legal), (self.credits_btn, self.show_credits),
+                        (self.repo_btn, self.show_repository)):
+            b.setCheckable(True)
+            b.clicked.connect(slot)
+            self.buttons.addButton(b)
+            row.addWidget(b)
+        row.addStretch(1)
+        lay.addLayout(row)
 
-def about_html() -> str:
-    cite = (f"Boulter E. Pycrograph (version {__version__}) [Computer software]. "
-            "https://github.com/TheBrickalista/Pycrograph")
-    return (f"<h2>Pycrograph {html.escape(__version__)}</h2>"
-            "<p>Publication figures from fluorescence microscopy images — non-destructive, "
-            "provenance-tracked. Sister app of PysternBlot.</p>"
-            "<p>Etienne Boulter (IRCAN, Inserm/CNRS/Université Côte d'Azur)</p>"
-            "<p><b>Licence</b>: GNU General Public License v3.0 only (GPL-3.0-only).</p>"
-            f"<p><b>Citation</b>: {html.escape(cite)}<br>"
-            "<small>See CITATION.cff in the repository.</small></p>")
+        self.view = QPlainTextEdit()
+        self.view.setReadOnly(True)
+        self.view.setFont(fixed_font())                 # licence texts are laid out in columns
+        lay.addWidget(self.view, 1)
+        self.show_legal()
+
+    def _show(self, button: QPushButton, text: str) -> None:
+        button.setChecked(True)
+        self.view.setPlainText(text)
+        self.view.moveCursor(QTextCursor.Start)
+
+    def show_legal(self) -> None:
+        self._show(self.legal_btn, _resource_text(LICENSE_TXT) or self.LICENSE_MISSING)
+
+    def show_credits(self) -> None:
+        self._show(self.credits_btn, credits_text(_resource_text(NOTICES)))
+
+    def show_repository(self) -> None:
+        self._show(self.repo_btn, repository_text(__version__, _resource_text(CITATION)))

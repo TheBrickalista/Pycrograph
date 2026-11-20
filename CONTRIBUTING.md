@@ -1,6 +1,6 @@
 # Contributing to Pycrograph
 
-Pycrograph is maintained by Etienne Boulter (IRCAN). Bug reports, feature
+Pycrograph is maintained by Etienne Boulter and Chloé C. Féral (IRCAN). Bug reports, feature
 suggestions and pull requests are welcome; for anything large, please open an
 issue first.
 
@@ -17,7 +17,12 @@ uv run python -m pycrograph
 
 If you change dependencies, regenerate `uv.lock` and the hashed lock in `ci/`
 (command in the header of `ci/requirements-min.in`). Floors in
-`pyproject.toml` must equal the `==` pins in `ci/requirements-min.in`.
+`pyproject.toml` must equal the `==` pins in `ci/requirements-min.in`. Then
+regenerate the third-party notices from the locked environment
+(`uv sync --locked`, then `python scripts/make_third_party_notices.py`). If you
+edit `LICENSE` or `CITATION.cff`, copy them to `pycrograph/resources/LICENSE.txt`
+and `pycrograph/resources/CITATION.cff`; tests check that the copies are
+identical.
 
 ## Tests
 

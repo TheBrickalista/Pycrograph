@@ -10,10 +10,13 @@ Pycrograph is the imaging sister of [PysternBlot](https://github.com/TheBrickali
 (Western blot figures). It keeps what OMERO.figure does well — figures re-rendered
 from raw data with recorded display settings — without a server.
 
-> **Status: alpha (0.2.0).** Library, MetaMorph readers, the per-channel
-> display pipeline, the figure editor (layout, labels, scale bars, insets,
-> shapes), consistency check, provenance-tracked export and `.pcarchive`
-> archives work (see [Roadmap](Roadmap.md)).
+> **Status: beta (0.2.0).** 0.x releases are betas: GitHub pre-releases,
+> each archived on Zenodo with a DOI. 1.0.0 will be the first stable
+> release, also published on PyPI.
+> Library, MetaMorph readers, the per-channel display pipeline, the figure
+> editor (layout, labels, scale bars, insets, shapes), consistency check,
+> provenance-tracked export and `.pcarchive` archives work (see
+> [Roadmap](Roadmap.md)).
 
 ## Principles
 
@@ -45,13 +48,14 @@ from raw data with recorded display settings — without a server.
 
 | Platform | Download | Notes |
 |---|---|---|
-| **macOS** | `Pycrograph-vX.Y.Z-macOS.zip` from the [latest release](https://github.com/TheBrickalista/Pycrograph/releases/latest) | macOS 15 or later, Apple Silicon. Signed and notarized: unzip, move to Applications, open. |
-| **Windows** | `Pycrograph-vX.Y.Z-Windows.exe` from the [latest release](https://github.com/TheBrickalista/Pycrograph/releases/latest) | Not yet code-signed: Windows SmartScreen shows a warning on first run — click **More info → Run anyway**. |
-| **Python (any OS)** | `pip install pycrograph` | Python 3.11 or later; also for Intel Macs (macOS 15 or later). Run with `pycrograph`. |
+| **macOS** | `Pycrograph-vX.Y.Z-macOS.zip` from the [Releases page](https://github.com/TheBrickalista/Pycrograph/releases) (newest *Pre-release*) | macOS 15 or later, Apple Silicon. Signed and notarized: unzip, move to Applications, open. |
+| **Windows** | `Pycrograph-vX.Y.Z-Windows.exe` from the [Releases page](https://github.com/TheBrickalista/Pycrograph/releases) (newest *Pre-release*) | Not yet code-signed: Windows SmartScreen shows a warning on first run — click **More info → Run anyway**. |
+| **Python (any OS)** | From source (see [Installation](https://pycrograph.readthedocs.io/en/latest/installation.html)); `pip install pycrograph` from 1.0.0 | Python 3.11 or later; also for Intel Macs (macOS 15 or later). |
 
 macOS versions before 15 are not supported (PySide6 6.11's binding modules
-require macOS 15). Pre-releases (e.g. `0.2.0b1`) are published as GitHub
-pre-releases with signed apps, not on PyPI. Full documentation:
+require macOS 15). Betas (all 0.x versions, e.g. `0.2.0`, `0.2.0b1`) are
+published as GitHub pre-releases with signed apps and archived on Zenodo, not
+on PyPI. Full documentation:
 <https://pycrograph.readthedocs.io>.
 
 ### Development
@@ -76,4 +80,5 @@ PYCROGRAPH_SAMPLE_TIFF="/Volumes/LaCie/…/Nuc_ER_ER.tif" uv run pytest -m sampl
 
 ## License
 
-GPL-3.0-only. © 2026 Etienne Boulter (IRCAN — Inserm, CNRS, Université Côte d'Azur).
+GPL-3.0-only. Copyright © 2026 Etienne Boulter, Chloé C. Féral — Université Côte d'Azur, CNRS,
+Inserm, IRCAN.

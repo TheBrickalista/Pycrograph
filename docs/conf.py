@@ -4,8 +4,8 @@
 # -- Project information -----------------------------------------------------
 
 project = "Pycrograph"
-copyright = "2026, Etienne Boulter"
-author = "Etienne Boulter"
+copyright = "2026, Etienne Boulter and Chloé C. Féral"
+author = "Etienne Boulter and Chloé C. Féral"
 release = "0.2.0"
 
 # -- General configuration ---------------------------------------------------

@@ -69,7 +69,7 @@ def test_tabs(window):
     assert window.tabs.currentWidget() is window.home                 # opens on Home
     window.show_about()
     assert window.tabs.currentWidget() is window.about_tab
-    assert "GPL-3.0-only" in window.about_tab.text.text()
+    assert "GNU GENERAL PUBLIC LICENSE" in window.about_tab.view.toPlainText()     # Legal first
 
 
 def test_add_move_resize_delete_undo(app, window, workspace, mm_tiff, stk_tc):

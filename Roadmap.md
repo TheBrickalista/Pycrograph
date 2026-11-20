@@ -3,9 +3,17 @@
 Indicative order; each step keeps the hard rules (figures only, raw pixels
 untouched, local only, provenance).
 
+**Release plan.**
+
+- **0.x betas** (from 0.2.0): GitHub pre-releases with the signed macOS app
+  and the Windows executable, each archived on Zenodo with a DOI (a dated,
+  citable record of every release). No PyPI upload.
+- **1.0.0**: first stable release, archived on Zenodo as before and also
+  published on PyPI.
+
 1. **Session 1 — done (0.1.0):** scaffold, MetaMorph TIFF/STK readers, models,
    library with import by reference, per-channel display, hash-chained log.
-2. **Figure editor — done (0.2.0), items 3–8 below:** canvas, layout tools, labels and
+2. **Figure editor — done (0.2.0, first public beta), items 3–8 below:** canvas, layout tools, labels and
    scale bars, insets and shapes, consistency check, provenance-tracked export,
    `.pcarchive` archives.
 3. **Canvas & panels:** page at journal width (presets as data: Nature 89 /
@@ -25,7 +33,9 @@ untouched, local only, provenance).
 8. **Archives** (PysternBlot `.pbarchive` system): light (OME-TIFF of what the
    figure uses) and complete (raw files).
 9. **MetaMorph `.nd`** sets, then `.czi` / `.nd2` / `.lif` via Java-free `bioio`.
-10. **PyInstaller builds** (macOS 15+ Apple Silicon, Windows), Zenodo DOI.
+10. **PyInstaller builds** (macOS 15+ Apple Silicon, Windows) and Zenodo
+    archiving — done from 0.2.0 (GitHub pre-releases). **1.0.0 stable:** also
+    on PyPI.
 11. **Pypirus hooks** (per-manuscript workspaces).
 
 ## Open decisions
