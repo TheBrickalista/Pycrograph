@@ -7,6 +7,20 @@ All notable changes to Pycrograph are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Inset numbers can be hidden.** `InsetStyle.show_number` (default on),
+  with a *Show number* checkbox in the Insets & Shapes tab next to the other
+  style options. It applies to every selected inset in one gesture, shows a
+  mixed state when they differ, and is per inset (not shared through linked
+  groups).
+  - When off, no number is drawn on the inset (a top-left label moves up to
+    the margin) nor next to its rectangle on the parent. Colours, border and
+    rectangle are unchanged, on screen and in every export.
+  - The provenance sidecar's inset record adds `number_shown` next to
+    `number`.
+- Project format **4**: the migration writes `show_number: true` into
+  existing inset styles (logged as `project.migrate`).
+- `pycrograph/ui_text.py`: `plural(n, word)` / `noun(n, word)` for
+  user-facing wording, with a test guarding against `(s)` in message strings.
 - **Mixed bit depths in a lock.**
   - *Lock selection* adds "These images have different bit depths (8-bit:
     panel 2; 16-bit: panels 1, 3). Equal levels do not mean equal
@@ -114,6 +128,14 @@ All notable changes to Pycrograph are documented here. The format follows
   divergence (`insets.group_invariant_issues`).
 
 ### Changed
+- Messages use proper singular / plural ("1 panel", "3 panels", "1 error, 2
+  warnings") instead of "panel(s)", "inset(s)", "image(s)" or "warning(s)":
+  status bar, consistency check, Lock and Replicate dialogs, undo labels,
+  Home and Info tabs, export notes.
+- Skipped-channel status no longer repeats the channel: "Channel 2 white:
+  applied to 1 locked panel; 1 skipped (no channel 2: panel 3)".
+- Inset and lock screenshots regenerated (new wording, *Show number*
+  checkbox). `ARCHITECTURE.md` gives the current project format version.
 - **Lock groups are named, never shown by their internal id.**
   - The Preview tab reads *🔒 Locked with N other panel(s) (split row |
     montage | condition grid | manual lock)*, and the mixed case lists kinds.

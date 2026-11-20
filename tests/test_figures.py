@@ -132,7 +132,7 @@ def test_undo_redo_restores_and_logs(workspace, project_with_images):
     assert ed.undo()                                       # undo move (2 panels)
     assert ed.figure.model_dump() == after_add
     assert [e.operation for e in p.operation_log[n:]] == ["figure.undo"] * 2
-    assert p.operation_log[-1].note.endswith("Move panel(s)")
+    assert p.operation_log[-1].note.endswith("Move panels")
 
     assert ed.redo()
     assert ed.figure.model_dump() == after_move

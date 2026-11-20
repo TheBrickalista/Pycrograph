@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..models import Project, ProjectMeta
+from ..ui_text import plural
 
 ROLE = Qt.UserRole
 
@@ -128,7 +129,7 @@ class HomeTab(QWidget):
         for f in project.figures:
             if f.hidden:
                 continue
-            it = QListWidgetItem(f"{f.name}  —  {len(f.panels)} panel(s)")
+            it = QListWidgetItem(f"{f.name}  —  {plural(len(f.panels), 'panel')}")
             it.setData(ROLE, f.id)
             self.figures.addItem(it)
 

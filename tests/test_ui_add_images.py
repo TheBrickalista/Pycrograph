@@ -130,7 +130,7 @@ def test_multi_select_and_datasets_one_gesture(setup, qtbot, monkeypatch):
     entries = [e for e in w.project.operation_log[n:] if e.operation == "figure.panel.add"]
     assert [e.target_id for e in entries] == [p.id for p in panels]
     ed = tab.current_editor()
-    assert ed.history.undo_label == "Add 3 panel(s)"                  # one gesture
+    assert ed.history.undo_label == "Add 3 panels"                  # one gesture
     tab.a_undo.trigger()
     assert tab.current_figure().panels == []
 

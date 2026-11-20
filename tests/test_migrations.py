@@ -6,10 +6,12 @@ from __future__ import annotations
 
 import json
 
+from pycrograph.figures import create_figure
+from pycrograph.insets import create_inset
 from pycrograph.logchain import verify_log_chain
 from pycrograph.migrations import migrate_project_dict
-from pycrograph.models import PROJECT_FORMAT_VERSION
-from pycrograph.storage import load_project_file
+from pycrograph.models import PROJECT_FORMAT_VERSION, Panel
+from pycrograph.storage import create_dataset, load_project_file, register_image
 
 
 def v1_project_dict(workspace) -> dict:
@@ -71,3 +73,31 @@ def test_v1_without_figures(workspace):
     d["figures"] = []
     out, _ = migrate_project_dict(d)
     assert out["figures"] == []
+
+
+def test_v3_to_v4_inset_show_number(workspace, mm_tiff):
+    """Format 4 adds InsetStyle.show_number: existing insets keep their
+    numbers (true), logged as project.migrate."""
+    p = workspace.create_project("V3")
+    ds = create_dataset(p, "A")
+    ref = register_image(p, mm_tiff, ds.id)
+    fig = create_figure(p, "F")
+    parent = Panel(id="pa", image_id=ref.id, width_mm=40, height_mm=40)
+    fig.panels.append(parent)
+    fig.panels.append(create_inset(fig, parent, ref, (8, 8, 16, 16), "in"))
+    workspace.save_project(p)
+    path = workspace.project_json(p.project.id)
+    d = json.loads(path.read_text())
+    d["project"]["format_version"] = 3
+    style = d["figures"][0]["panels"][1]["inset_style"]
+    style.pop("show_number")
+    path.write_text(json.dumps(d))
+    out, old = migrate_project_dict(json.loads(path.read_text()))
+    assert old == 3 and out["figures"][0]["panels"][1]["inset_style"]["show_number"] is True
+    assert "show_number" not in (out["figures"][0]["panels"][0].get("inset_style") or {})
+    q = workspace.load_project(p.project.id)
+    assert q.project.format_version == PROJECT_FORMAT_VERSION == 4
+    assert q.figures[0].panels[1].inset_style.show_number is True
+    last = q.operation_log[-1]
+    assert last.operation == "project.migrate" and (last.old_value, last.new_value) == (3, 4)
+    assert verify_log_chain(q).status == "ok"

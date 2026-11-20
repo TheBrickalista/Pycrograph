@@ -17,7 +17,7 @@ hash-chained operation log, and a PySide6 `QGraphicsView` UI.
 
 | Module | Role |
 |---|---|
-| `models.py` | `Project › Dataset › ImageRef`, `ChannelSettings`, `ImageDisplay`, `Figure` (`PageSetup`, `legend`), `Panel` (`PanelBorder`, `InsetStyle`, `Shape`), `OperationLogEntry`. `PROJECT_FORMAT_VERSION = 2` |
+| `models.py` | `Project › Dataset › ImageRef`, `ChannelSettings`, `ImageDisplay`, `Figure` (`PageSetup`, `legend`), `Panel` (`PanelBorder`, `InsetStyle`, `Shape`), `OperationLogEntry`. `PROJECT_FORMAT_VERSION = 4` (older projects migrated on load, `migrations.py`) |
 | `migrations.py` | Raw-dict migrations of `project.json` applied before validation (1 → 2: `Figure.page` `PagePreset` → `PageSetup`) |
 | `figures.py` | Figure editing without Qt: create/rename figures, panels from library images (copy of display settings), move/resize/delete, `FigureEditor` gestures with snapshot undo/redo |
 | `viewport.py` | Viewport = crop (pure geometry): uniform scale, zoom % (100 % = whole image fitted), pan, resize at constant scale, rotation about the crop centre, orientation mapping, where the image sits in its panel |

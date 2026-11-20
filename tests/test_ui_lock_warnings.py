@@ -64,7 +64,7 @@ def test_lock_mixed_depths_and_differing_settings(setup):
     tab.canvas.select_ids([a.id, b.id])
     asked = []
     tab.lock_selection(confirm=lambda text: asked.append(text) or True)
-    assert asked[0].startswith("1 panel(s) will take the levels/LUTs of panel 1")
+    assert asked[0].startswith("1 panel will take the levels/LUTs of panel 1")
     assert f"\n\n⚠ {DEPTH}" in asked[0]
     assert panel_channel(b, 0).white == 255                      # clamped, propagation unchanged
 
@@ -102,6 +102,5 @@ def test_status_names_skipped_panels(setup):
     tab.inspector.controls[1].white_spin.setValue(1500)
     QApplication.processEvents()
     assert w.statusBar().currentMessage() == (
-        "Channel 2 white: Channel 2 applied to 1 locked panel(s); "
-        "1 skipped (no channel 2: panel 3)")
+        "Channel 2 white: applied to 1 locked panel; 1 skipped (no channel 2: panel 3)")
     assert {e.target_id for e in w.project.operation_log[n:]} == {a.id, b.id}

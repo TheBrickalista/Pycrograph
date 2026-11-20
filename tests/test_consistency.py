@@ -158,7 +158,7 @@ def test_sorted_and_deduplicated(env):
     issues = run(p, fig, source_status=lambda r: "missing" if r is zs else "ok")
     assert issues[0].severity == "error"
     assert len(codes(issues, "levels")) == 1               # row + lock group: reported once
-    assert C.summary(issues).startswith("1 error(s)")
+    assert C.summary(issues).startswith("1 error, ")
     assert issues[0].to_dict()["panel_ids"] == [b.id]
 
 

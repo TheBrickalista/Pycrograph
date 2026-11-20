@@ -46,6 +46,7 @@ from ..storage import (
     relink_by_prefix, relink_image, remove_image_from_dataset, rename_dataset,
     set_dataset_hidden, set_image_annotation, set_image_hash, sha256_file, write_thumbnail,
 )
+from ..ui_text import plural
 from .channel_controls import ChannelControls
 from .figures_tab import FiguresTab
 from .home_tab import HomeTab
@@ -646,7 +647,7 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(f"Sources: {summary}")
         if not quiet and counts.get("missing"):
             QMessageBox.warning(self, "Missing files",
-                                f"{counts['missing']} image file(s) not found (drive unplugged or "
+                                f"{plural(counts['missing'], 'image file')} not found (drive unplugged or "
                                 "renamed?). Right-click an image → Relink….")
         return dict(self._status)
 
@@ -780,7 +781,8 @@ class MainWindow(QMainWindow):
                   and check_image(self.ws, p, r) == RefStatus.MISSING]
         if others and QMessageBox.question(
                 self, "Relink others",
-                f"{len(others)} other missing image(s) were under\n{old_prefix}\n\n"
+                f"{plural(len(others), 'other missing image')} "
+                f"{'was' if len(others) == 1 else 'were'} under\n{old_prefix}\n\n"
                 f"Try the same change ({new_prefix}) for them? Each file is verified by SHA-256."
         ) == QMessageBox.Yes:
             QApplication.setOverrideCursor(Qt.WaitCursor)
@@ -788,7 +790,7 @@ class MainWindow(QMainWindow):
                 done = relink_by_prefix(self.ws, p, old_prefix, new_prefix)
             finally:
                 QApplication.restoreOverrideCursor()
-            self.statusBar().showMessage(f"Relinked {len(done) + 1} image(s)")
+            self.statusBar().showMessage(f"Relinked {plural(len(done) + 1, 'image')}")
         self.save()
         self.renderer.invalidate()
         self.figures_tab.refresh()

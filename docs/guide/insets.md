@@ -38,13 +38,18 @@ The inset stays tied to its parent:
   ticked (the default), the inset changes time point, Z plane, levels and LUTs
   with its parent.
 
-Colour, line width, *Rectangle on the parent* and *Matching border on the
-inset* are set in the same tab.
+The same tab sets the inset's style: **Colour**, line **Width**,
+*Rectangle on the parent*, *Matching border on the inset* and **Show
+number**. Untick *Show number* to hide the number on the inset and next to
+its rectangle on the parent; colours, border and rectangle stay. A label in
+the inset's top-left corner then moves up into the freed space. These style
+options apply to every selected inset in one step, and are per inset: they are
+not shared through a linked group (see section 4).
 
 ### On several panels at once
 
 1. Select all the panels that should get the inset (Ctrl/Cmd-click). The
-   button now reads **Create inset… (then offer it on N other panel(s))**.
+   button now reads **Create inset… (then offer it on N other panels)**.
 2. Click it and draw the rectangle on **one** of them.
 3. The **Replicate inset** dialog opens with the other panels already ticked.
    Continue with step 2 below.
@@ -216,8 +221,8 @@ propagate.
 
 - its **position on the page**;
 - for Same size members, **where** on its own image it looks;
-- its colour, line width and follow options. To change these for the whole
-  group, select all its insets together first.
+- its colour, line width, *Show number* and follow options. To change these
+  for the whole group, select all its insets together first.
 
 **Unlink from group** (Insets & Shapes tab) takes the selected insets out of
 the group so you can change one alone. **Make ordinary panel** turns an inset
@@ -280,7 +285,7 @@ that panel and replicate to it separately with Same size.
 
 ### Fewer insets were made than panels listed
 
-The status bar says *Inset replicated to N panel(s)*. If N is smaller than
+The status bar says *Inset replicated to N panels*. If N is smaller than
 the number of ticked panels, a panel was skipped because **one image is
 spatially calibrated (µm) and the other is not**: a size in µm cannot be
 matched to a size in pixels. Check the pixel size in the **Info** tab of both

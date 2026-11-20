@@ -138,7 +138,7 @@ def test_follow_flags_and_style(app, setup):
     view.select_ids([pb.id])
     tab.inspector.t_slider.setValue(2)
     assert inset.t == 2
-    assert "inset(s) followed" in w.statusBar().currentMessage()
+    assert "1 inset followed" in w.statusBar().currentMessage()
     view.select_ids([iid])
     insp = tab.insets_inspector
     assert insp.style_box.isEnabled() and insp.flags["follow_parent_tz"].isChecked()
@@ -232,6 +232,58 @@ def test_time_unit_shared_by_montage(app, setup):
     view.select_ids([pa.id, pb.id])
     asked = []
     tab.lock_selection(confirm=lambda text: asked.append(text) or False)
-    assert asked and "1 panel(s) will take the levels/LUTs of panel 1" in asked[0]
+    assert asked and "1 panel will take the levels/LUTs of panel 1" in asked[0]
     assert "channel 1 differs" in asked[0]
     assert pa.lock_group is None                              # declined
+
+
+def test_show_number_off_on_inset_and_parent(app, setup):
+    from pycrograph.models import PanelLabel
+    w, ids, (pa, pb) = setup
+    tab, view = w.figures_tab, w.figures_tab.canvas
+    insp = tab.insets_inspector
+    a = tab.create_inset(pa.id, (8, 8, 16, 16))
+    b = tab.create_inset(pa.id, (30, 30, 12, 12))
+    [copy] = tab.replicate_inset(a, [pb.id], "region", True)      # a and copy: one linked group
+    f = tab.current_figure()
+    f.panel(a).labels = [PanelLabel(text="zoom", position="top-left")]
+    tab.refresh(selected={a})
+
+    def numbers(pid):
+        return [t.toPlainText() for t in kids(view.item_for(pid), KIND_INSET_NUMBER)]
+
+    def label_y():
+        [lb] = kids(view.item_for(a), KIND_LABEL)
+        return lb.pos().y()
+    assert numbers(a) == ["1"] and sorted(numbers(pa.id)) == ["1", "2"]
+    y_with = label_y()
+    assert insp.flags["show_number"].isChecked()
+
+    # Off on inset 1 only: one gesture, one log entry; no number on it nor by its rectangle.
+    n_log, n_undo = len(w.project.operation_log), len(tab.current_editor().history._undo)
+    insp.flags["show_number"].click()
+    f = tab.current_figure()
+    assert f.panel(a).inset_style.show_number is False
+    assert [e.target_id for e in w.project.operation_log[n_log:]] == [a]
+    assert len(tab.current_editor().history._undo) == n_undo + 1
+    assert numbers(a) == [] and numbers(pa.id) == ["2"]          # inset 2 keeps its number
+    assert kids(view.item_for(a), KIND_INSET_BORDER)              # border unchanged
+    assert len(kids(view.item_for(pa.id), KIND_INSET_RECT)) == 2  # rectangles unchanged
+    assert label_y() < y_with                                     # corner stack starts at the margin
+    # Not shared through the region group: the linked copy keeps its number.
+    assert f.panel(copy).inset_style.show_number is True and numbers(copy) == ["1"]
+
+    # Mixed state over two selected insets; one click sets both, one gesture.
+    view.select_ids([a, b])
+    assert insp.flags["show_number"].checkState() == Qt.PartiallyChecked
+    n_log, n_undo = len(w.project.operation_log), len(tab.current_editor().history._undo)
+    insp.flags["show_number"].click()
+    f = tab.current_figure()
+    states = {f.panel(a).inset_style.show_number, f.panel(b).inset_style.show_number}
+    assert len(states) == 1
+    assert len(tab.current_editor().history._undo) == n_undo + 1
+    assert len(w.project.operation_log) - n_log == 1             # one entry: only one changed
+    tab.a_undo.trigger()
+    f = tab.current_figure()
+    assert (f.panel(a).inset_style.show_number, f.panel(b).inset_style.show_number) == (False, True)
+    assert verify_log_chain(w.project).status == "ok"

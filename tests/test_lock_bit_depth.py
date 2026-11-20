@@ -85,7 +85,7 @@ def test_locked_edit_reports_panels_lacking_the_channel(env):
     assert ed.last_lock_skipped == {c.id: {1}, d.id: {1}}
     assert [e.target_id for e in p.operation_log[n:]] == [a.id, b.id]   # nothing logged on c, d
     assert F.skipped_note(fig, ed.last_lock_skipped, len(ed.last_propagated)) == \
-        "Channel 2 applied to 1 locked panel(s); 2 skipped (no channel 2: panels 3–4)"
+        "applied to 1 locked panel; 2 skipped (no channel 2: panels 3–4)"
     # A channel every member has: nothing skipped.
     ed.edit([a.id], lambda q, r: F.set_channel_field(q, r, 0, "gamma", 1.2), key="g0",
             lock_values={(0, "gamma"): 1.2})
@@ -96,5 +96,5 @@ def test_skipped_note_several_channels(env):
     p, fig, ed, (sixteen, two, eight) = env
     a, b, c = ed.add_images([two, sixteen, eight])
     assert F.skipped_note(fig, {b.id: {1, 2}, c.id: {2}}, 1) == \
-        "Applied to 1 locked panel(s); 2 skipped (no channel 2: panel 2; no channel 3: panels 2–3)"
+        "applied to 1 locked panel; 2 skipped (no channel 2: panel 2; no channel 3: panels 2–3)"
     assert F.skipped_note(fig, {}, 3) == ""

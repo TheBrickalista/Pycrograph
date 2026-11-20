@@ -63,6 +63,7 @@ from .figures import LOCKED_FIELDS, bit_depths, channel_mismatches, lock_members
 from .labels import group_time_unit, resolve_label
 from .models import Figure, ImageRef, Panel, Project
 from .scalebar import ScaleBarUnavailable, bar_geometry
+from .ui_text import noun, plural
 
 Severity = Literal["error", "warning", "info"]
 SEVERITY_ORDER = {"error": 0, "warning": 1, "info": 2}
@@ -211,7 +212,7 @@ def check_figure(project: Project, figure: Figure,
         nonlinear = [c.index + 1 for c in p.channels if c.visible and abs(c.gamma - 1.0) > 1e-9]
         if nonlinear:
             issues.append(Issue("info", "nonlinear", f"{label}: non-linear display (gamma ≠ 1) "
-                                f"on channel(s) {', '.join(map(str, nonlinear))}", (p.id,)))
+                                f"on {noun(len(nonlinear), 'channel')} {', '.join(map(str, nonlinear))}", (p.id,)))
         s = ref.metadata.shape
         ppi = V.px_per_mm(p, s.X, s.Y) * 25.4
         if ppi < preset.dpi:
@@ -248,7 +249,7 @@ def check_figure(project: Project, figure: Figure,
         missing = list(dict.fromkeys(t for lb in p.labels
                                      for t in resolve_label(lb.text, p, ref, project, unit)[1]))
         if missing:
-            issues.append(Issue("warning", "labels", f"{label}: value(s) not found, drawn as “?”: "
+            issues.append(Issue("warning", "labels", f"{label}: {noun(len(missing), 'value')} not found, drawn as “?”: "
                                 + ", ".join(missing), (p.id,)))
         if crop_plane is not None:
             sat = []
@@ -302,4 +303,5 @@ def check_figure(project: Project, figure: Figure,
 
 def summary(issues: list[Issue]) -> str:
     counts = {s: sum(1 for i in issues if i.severity == s) for s in SEVERITY_ORDER}
-    return ", ".join(f"{n} {s}(s)" for s, n in counts.items() if n) or "no issue"
+    return ", ".join(plural(n, s, "info" if s == "info" else None)
+                     for s, n in counts.items() if n) or "no issue"

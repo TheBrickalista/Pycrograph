@@ -43,6 +43,7 @@ from .. import consistency as C
 from .. import export as X
 from ..preferences import Preferences
 from ..storage import Workspace, check_image
+from ..ui_text import noun, plural
 from .figure_canvas import FigureCanvas, PanelItem, PanelVisual
 from .insets_inspector import InsetsInspector
 from .labels_inspector import LabelsInspector
@@ -395,18 +396,18 @@ class FiguresTab(QWidget):
             self._idle.start()
         notes = []
         if skipped:
-            notes.append(f"{skipped} panel(s) skipped" + (f" ({what})" if what else ""))
+            notes.append(f"{plural(skipped, 'panel')} skipped" + (f" ({what})" if what else ""))
         if ed.last_lock_skipped:          # say which locked panels lack the channel
             notes.append(F.skipped_note(ed.figure, ed.last_lock_skipped,
                                         len(ed.last_propagated)))
         elif ed.last_propagated:
-            notes.append(f"also applied to {len(ed.last_propagated)} locked panel(s)")
+            notes.append(f"also applied to {plural(len(ed.last_propagated), 'locked panel')}")
         if ed.last_propagated:
             mism = self.mismatch_warning(ids + ed.last_propagated)
             if mism and final:
                 notes.append(mism)
         if ed.last_synced and final:
-            notes.append(f"{len(ed.last_synced)} inset(s) followed")
+            notes.append(f"{plural(len(ed.last_synced), 'inset')} followed")
         if ed.last_region and final:
             notes.append(self.linked_note(ed.last_region))
         if notes:
@@ -466,7 +467,7 @@ class FiguresTab(QWidget):
         ed = self.current_editor()
         panels = ed.add_images(refs)
         self.refresh(selected={p.id for p in panels})
-        self.status_message.emit(f"Added {len(panels)} panel(s) to {ed.figure.name}")
+        self.status_message.emit(f"Added {plural(len(panels), 'panel')} to {ed.figure.name}")
         return panels
 
     # Set by the main window: () -> (thumbnails {id: QIcon}, statuses {id: str})
@@ -534,7 +535,7 @@ class FiguresTab(QWidget):
         self.flush()
         self._before_gesture()
         label = "Resize panel" if operation == "figure.panel.resize" else \
-            f"Move {len(changes)} panel(s)"
+            f"Move {plural(len(changes), 'panel')}"
         ed.set_geometry(changes, operation, label)
         followers = list(ed.last_region)
         if followers:
@@ -573,7 +574,7 @@ class FiguresTab(QWidget):
             _w, h = ed.figure.page.size_mm
             bottom = max(p.y_mm + p.height_mm for p in ed.figure.panels if p.id in added)
             if bottom > h:
-                self.status_message.emit(f"{label}: {len(added)} panel(s) added; they extend "
+                self.status_message.emit(f"{label}: {plural(len(added), 'panel')} added; {'it extends' if len(added) == 1 else 'they extend'} "
                                          f"below the page ({bottom:.0f} > {h:g} mm)")
         return result
 
@@ -605,7 +606,7 @@ class FiguresTab(QWidget):
         skipped = self._layout(fn, "figure.layout.align_magnification", "Align magnification",
                                min_sel=2)
         if skipped:
-            self.status_message.emit(f"Align magnification: {len(skipped)} panel(s) skipped "
+            self.status_message.emit(f"Align magnification: {plural(len(skipped), 'panel')} skipped "
                                      "(no spatial calibration)")
 
     def nudge(self, dx: float, dy: float) -> None:
@@ -795,7 +796,7 @@ class FiguresTab(QWidget):
         """Unresolved tokens are never silent: status bar when they change."""
         missing = tuple(self.missing_tokens())
         if missing and missing != self._last_missing:
-            self.status_message.emit(f"Labels: {len(missing)} value(s) not found, drawn as “?”: "
+            self.status_message.emit(f"Labels: {plural(len(missing), 'value')} not found, drawn as “?”: "
                                      + ", ".join(missing))
         self._last_missing = missing
 
@@ -826,7 +827,7 @@ class FiguresTab(QWidget):
 
     @staticmethod
     def linked_note(followers: list[str]) -> str:
-        return (f"applies to the {len(followers)} linked inset(s) "
+        return (f"applies to the {plural(len(followers), 'linked inset')} "
                 "(same size, orientation and region; Unlink to change one alone)")
 
     def mismatch_warning(self, panel_ids: list[str]) -> str:
@@ -1010,13 +1011,13 @@ class FiguresTab(QWidget):
         targets = [ed.figure.panel(i) for i in target_ids if ed.figure.panel(i)]
         self.flush()
         self._before_gesture()
-        with ed.gesture("figure.inset.replicate", f"Replicate inset to {len(targets)} panel(s)"):
+        with ed.gesture("figure.inset.replicate", f"Replicate inset to {plural(len(targets), 'panel')}"):
             copies = I.replicate_inset(ed.figure, src, targets, self.project.images, mode, link,
                                        F.new_id, self.gap_spin.value())
             ed.figure.panels.extend(copies)
         self.refresh(selected={c.id for c in copies} | {src.id})
         modes = [c.inset_style.region_link for c in copies]
-        self.status_message.emit(f"Inset replicated to {len(copies)} panel(s)"
+        self.status_message.emit(f"Inset replicated to {plural(len(copies), 'panel')}"
                                  + (f" ({modes.count('size')} by size)" if "size" in modes else "")
                                  + (", linked" if link else ""))
         return [c.id for c in copies]
@@ -1138,7 +1139,7 @@ class FiguresTab(QWidget):
         s = ref.metadata.shape
         ax, ay = V.panel_to_raw(panel, s.X, s.Y, 0.0, 0.0)
         bx, by = V.panel_to_raw(panel, s.X, s.Y, dx_mm, dy_mm)
-        self.apply(lambda p, r: F.move_shapes(p, r, shape_ids, bx - ax, by - ay), "Move shape(s)",
+        self.apply(lambda p, r: F.move_shapes(p, r, shape_ids, bx - ax, by - ay), "Move " + noun(len(shape_ids), "shape"),
                    operation="figure.shape.move", panel_ids=[panel_id])
 
     def _shape_targets(self) -> dict[str, set[str]]:
@@ -1150,7 +1151,7 @@ class FiguresTab(QWidget):
         if not targets:
             return 0, 0
         return self.apply(lambda p, r: F.update_shapes(p, r, targets.get(p.id, ()), fields),
-                          "Edit shape(s)", operation="figure.shape.set",
+                          "Edit " + noun(sum(len(v) for v in targets.values()), "shape"), operation="figure.shape.set",
                           panel_ids=list(targets))
 
     def delete_selected_shapes(self) -> tuple[int, int]:
@@ -1158,7 +1159,7 @@ class FiguresTab(QWidget):
         if not targets:
             return 0, 0
         out = self.apply(lambda p, r: F.delete_shapes(p, r, targets.get(p.id, ())),
-                         "Delete shape(s)", operation="figure.shape.delete",
+                         "Delete " + noun(sum(len(v) for v in targets.values()), "shape"), operation="figure.shape.delete",
                          panel_ids=list(targets))
         self.selected_shapes = {}
         self.insets_inspector.refresh()
@@ -1172,7 +1173,7 @@ class FiguresTab(QWidget):
             return 0
         chosen = self.selected_shapes.get(sel[0].id) or {sh.id for sh in sel[0].shapes}
         self.clip_shapes = [sh.model_dump(mode="json") for sh in sel[0].shapes if sh.id in chosen]
-        self.status_message.emit(f"{len(self.clip_shapes)} shape(s) copied")
+        self.status_message.emit(f"{plural(len(self.clip_shapes), 'shape')} copied")
         self.insets_inspector.refresh()
         return len(self.clip_shapes)
 
@@ -1181,7 +1182,7 @@ class FiguresTab(QWidget):
         if not self.clip_shapes:
             return 0, 0
         clip = list(self.clip_shapes)
-        out = self.apply(lambda p, r: F.paste_shapes(p, r, clip), "Paste shape(s)",
+        out = self.apply(lambda p, r: F.paste_shapes(p, r, clip), "Paste " + noun(len(clip), "shape"),
                          operation="figure.shape.paste")
         self.insets_inspector.refresh()
         return out
@@ -1237,7 +1238,7 @@ class FiguresTab(QWidget):
             self.status_message.emit(f"Export refused: {exc}")
             return None
         self._save()
-        self.status_message.emit(f"Exported {len(result.files)} file(s) + {result.sidecar.name}"
+        self.status_message.emit(f"Exported {plural(len(result.files), 'file')} + {result.sidecar.name}"
                                  + (f" — {'; '.join(result.warnings)}" if result.warnings else ""))
         return result
 
@@ -1270,7 +1271,7 @@ class FiguresTab(QWidget):
             QMessageBox.warning(self, "Export refused", str(exc))
             return None
         self._save()
-        self.status_message.emit(f"Source data: {len(result.files)} OME-TIFF file(s) + "
+        self.status_message.emit(f"Source data: {plural(len(result.files), 'OME-TIFF file')} + "
                                  f"{result.sidecar.name}")
         return result
 
@@ -1285,7 +1286,7 @@ class FiguresTab(QWidget):
         sel = self.selected_panels()
         if sel:
             self.clip_panels = F.copy_panels(sel, self.current_figure())
-            self.status_message.emit(f"{len(sel)} panel(s) copied")
+            self.status_message.emit(f"{plural(len(sel), 'panel')} copied")
         return len(sel)
 
     def paste_panels(self) -> list[str]:
@@ -1297,7 +1298,7 @@ class FiguresTab(QWidget):
         self.flush()
         self._before_gesture()
         new = F.pasted_panels(self.clip_panels)
-        with ed.gesture("figure.panel.paste", f"Paste {len(new)} panel(s)"):
+        with ed.gesture("figure.panel.paste", f"Paste {plural(len(new), 'panel')}"):
             ed.figure.panels.extend(new)
         self.refresh(selected={p.id for p in new})
         return [p.id for p in new]
@@ -1314,7 +1315,7 @@ class FiguresTab(QWidget):
         depth = F.bit_depth_warning(self.current_figure(), sel, self.project.images)
         if differ or depth:                # mixed bit depths: ask even if nothing differs
             ref0 = self.ref(sel[0])
-            text = (f"{len(differ)} panel(s) will take the levels/LUTs of panel "
+            text = (f"{plural(len(differ), 'panel')} will take the levels/LUTs of panel "
                     f"{self.current_figure().panels.index(sel[0]) + 1} "
                     f"({ref0.filename if ref0 else '?'}). Lock?" if differ
                     else f"Lock these {len(sel)} panels?")
@@ -1484,7 +1485,7 @@ class FiguresTab(QWidget):
             return
         sel = self.selected_panels()
         if not sel:
-            self.info.setHtml(f"<b>{html.escape(fig.name)}</b><br>{len(fig.panels)} panel(s)."
+            self.info.setHtml(f"<b>{html.escape(fig.name)}</b><br>{plural(len(fig.panels), 'panel')}."
                               "<br><small>Click, Ctrl-click or drag a rectangle to select.</small>")
             return
         if len(sel) > 1:
