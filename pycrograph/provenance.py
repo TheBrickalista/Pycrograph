@@ -174,6 +174,7 @@ def panel_record(project: Project, figure: Figure, panel: Panel, index: int,
         rect = I.rect_on_parent(parent, panel, ref) if parent is not None else None
         c = V.effective_crop(panel, s.X, s.Y)
         rec["inset"] = {"parent_id": panel.inset_of, "number": I.inset_number(figure, panel),
+                        "number_shown": panel.inset_style.show_number if panel.inset_style else True,
                         "style": panel.inset_style.model_dump() if panel.inset_style else None,
                         "rectangle_raw_px": {"x": c.x, "y": c.y, "width": c.w, "height": c.h},
                         "rectangle_on_parent_mm": (dict(zip(("x", "y", "width", "height"),

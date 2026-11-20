@@ -392,7 +392,7 @@ def build_overlays(item: "PanelItem", panel: Panel, ref: Optional[ImageRef],
 
     # ---- corner stacks: next free offset from the corner edge, per corner
     corner_cursor = {c: margin for c in INSIDE}
-    if style is not None:
+    if style is not None and style.show_number:
         n = I.inset_number(figure, panel)
         if n:
             num = _number_item(n, style.color, figure.page.preset, item)
@@ -416,8 +416,9 @@ def build_overlays(item: "PanelItem", panel: Panel, ref: Optional[ImageRef],
                 continue
             ri = InsetRectItem(child.id, item, QRectF(*r), st.color, st.width_pt * PT_MM, clip)
             _keep(item, ri)
-            ri.number = _number_item(k, st.color, figure.page.preset, ri)
-            ri.number.setPos(r[0] + 0.3, r[1] + 0.1)
+            if st.show_number:
+                ri.number = _number_item(k, st.color, figure.page.preset, ri)
+                ri.number.setPos(r[0] + 0.3, r[1] + 0.1)
 
     # ---- scale bar
     bar = panel.scale_bar

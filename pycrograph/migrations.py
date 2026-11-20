@@ -58,9 +58,20 @@ def _v2_to_v3(data: dict[str, Any]) -> dict[str, Any]:
     return data
 
 
+def _v3_to_v4(data: dict[str, Any]) -> dict[str, Any]:
+    """InsetStyle.show_number (numbers were always drawn before)."""
+    for fig in data.get("figures") or []:
+        for panel in fig.get("panels") or []:
+            style = panel.get("inset_style")
+            if isinstance(style, dict):
+                style.setdefault("show_number", True)
+    return data
+
+
 MIGRATIONS: dict[int, Callable[[dict[str, Any]], dict[str, Any]]] = {
     1: _v1_to_v2,
     2: _v2_to_v3,
+    3: _v3_to_v4,
 }
 
 

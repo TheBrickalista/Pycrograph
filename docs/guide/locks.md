@@ -51,7 +51,7 @@ The **Auto ▾** layouts lock the panels they create:
 | **Condition grid (keep each image's rendering)…** | **One group per row.** Each image keeps its own settings, shared only across that row's channels and merge. |
 
 Select any of these panels: the Preview tab says, for example,
-*🔒 Locked with 2 other panel(s) (split row)*.
+*🔒 Locked with 2 other panels (split row)*.
 
 ![A split-channel row: the Preview tab shows the lock and its kind](../_static/img/locks-split.png)
 
@@ -69,7 +69,7 @@ for its pattern, not its brightness, and say so in the legend.
    until at least two panels are selected.
 3. If their settings differ, Pycrograph asks first:
 
-   > *N panel(s) will take the levels/LUTs of panel K (file name). Lock?*
+   > *N panels will take the levels/LUTs of panel K (file name). Lock?*
 
    The reference is the **selected panel that comes first in the figure**
    (the lowest panel number, which the message names). It is not the panel
@@ -87,13 +87,13 @@ for its pattern, not its brightness, and say so in the legend.
 From then on, any change to black, white, gamma, LUT or invert on one panel of
 the group (typing a value, dragging the histogram handles, **Auto**, pasting a
 rendering) reaches the same channel of all the others in **one step**. The
-status bar says *also applied to N locked panel(s)*.
+status bar says *also applied to N locked panels*.
 
 The other buttons in the Lock section:
 
 - **Unlock** takes the selected panels out of their group. The other members
   stay locked together.
-- **Select group** selects every panel of the selected panels' group(s), for
+- **Select group** selects every panel of the selected panels' groups, for
   example to find all members before unlocking them.
 
 Locking panels that already belong to another group moves them into the new
@@ -228,7 +228,7 @@ display settings.
 ### The levels changed on another panel
 
 That panel is locked with the one you edited. The status bar said *also
-applied to N locked panel(s)*. Check the Lock line in the Preview tab. Use
+applied to N locked panels*. Check the Lock line in the Preview tab. Use
 **Undo** to go back. Use **Unlock** if that panel should be set on its own.
 
 ### Lock selection is greyed out
@@ -243,12 +243,12 @@ A lock only reaches panels **whose image has that channel**. A one-channel
 image locked with two-channel images can't take changes to channel 2. The
 status bar names the panels that were skipped:
 
-> *Channel 2 white: Channel 2 applied to 1 locked panel(s); 1 skipped (no
-> channel 2: panel 3)*
+> *Channel 2 white: applied to 1 locked panel; 1 skipped (no channel 2:
+> panel 3)*
 
 Nothing is changed (or logged) on a skipped panel. This is expected. If you
 edited several selected panels at once and one of them lacks the channel, the
-status bar says *N panel(s) skipped (no channel 2)*.
+status bar says *1 panel skipped (no channel 2)*.
 
 ### Undo
 

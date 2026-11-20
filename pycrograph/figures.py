@@ -47,6 +47,7 @@ from .models import (
     ScaleBar, Shape, ZProjection,
 )
 from .storage import log_operation
+from .ui_text import plural
 
 DEFAULT_PANEL_WIDTH_MM = 40.0
 DEFAULT_GAP_MM = 2.0
@@ -376,7 +377,7 @@ class FigureEditor:
         return self.project.images.get(panel.image_id)
 
     def edit(self, panel_ids: Iterable[str], fn: Callable[[Panel, ImageRef], bool],
-             operation: str = "figure.panel.set", label: str = "Edit panel(s)",
+             operation: str = "figure.panel.set", label: str = "Edit panels",
              key: Optional[str] = None, final: bool = True, propagate: bool = True,
              lock_values: Optional[dict[tuple[int, str], Any]] = None) -> tuple[int, int]:
         """Apply fn(panel, ref) to each panel; fn returns False to skip a
@@ -447,7 +448,7 @@ class FigureEditor:
                    page: int = 0) -> list[Panel]:
         refs = list(refs)
         out: list[Panel] = []
-        with self.gesture("figure.panel.add", f"Add {len(refs)} panel(s)"):
+        with self.gesture("figure.panel.add", f"Add {plural(len(refs), 'panel')}"):
             for ref in refs:
                 panel = panel_from_image(ref, width_mm=width_mm, page=page)
                 panel.x_mm, panel.y_mm = next_free_position(self.figure, panel.width_mm,
@@ -461,7 +462,7 @@ class FigureEditor:
         if not ids:
             return 0
         before = len(self.figure.panels)
-        with self.gesture("figure.panel.delete", f"Delete {len(ids)} panel(s)"):
+        with self.gesture("figure.panel.delete", f"Delete {plural(len(ids), 'panel')}"):
             self.figure.panels = [p for p in self.figure.panels if p.id not in ids]
             # An inset whose parent is gone becomes an ordinary panel. (A
             # deleted inset's rectangle is derived: it simply disappears.)
@@ -473,7 +474,7 @@ class FigureEditor:
         return before - len(self.figure.panels)
 
     def set_geometry(self, changes: dict[str, Geometry], operation: str = "figure.panel.move",
-                     label: str = "Move panel(s)") -> int:
+                     label: str = "Move panels") -> int:
         """Apply new (x, y, w, h) to several panels as one gesture. A size
         change extends/shrinks the crop at constant scale (design §2.4)."""
         changed = 0
@@ -513,7 +514,7 @@ class FigureEditor:
         never removed."""
         last = max((p.page for p in self.figure.panels), default=0)
         if page.n_pages <= last:
-            raise ValueError(f"page {last + 1} holds panels: keep at least {last + 1} page(s)")
+            raise ValueError(f"page {last + 1} holds panels: keep at least {plural(last + 1, 'page')}")
         with self.gesture("figure.page.set", "Page setup"):
             self.figure.page = page.model_copy(deep=True)
         return True
@@ -779,10 +780,10 @@ def replace_problems(panel: Panel, old: Optional[ImageRef], new: ImageRef) -> tu
     m = new.metadata
     used = max((c.index for c in panel.channels), default=-1)
     if old is not None and old.metadata.shape.C != m.shape.C:
-        errors.append(f"{new.filename}: {m.shape.C} channel(s), the panel's image has "
+        errors.append(f"{new.filename}: {plural(m.shape.C, 'channel')}, the panel's image has "
                       f"{old.metadata.shape.C}")
     elif used >= m.shape.C:
-        errors.append(f"{new.filename}: only {m.shape.C} channel(s), the panel uses channel "
+        errors.append(f"{new.filename}: only {plural(m.shape.C, 'channel')}, the panel uses channel "
                       f"{used + 1}")
     if panel.scale_bar.visible and not m.calibration.is_calibrated:
         errors.append(f"{new.filename}: not calibrated, the panel shows a scale bar")
@@ -999,9 +1000,10 @@ def bit_depth_warning(figure: Figure, panels: Iterable[Panel], images: dict[str,
 
 
 def skipped_note(figure: Figure, skipped: dict[str, set[int]], n_applied: int) -> str:
-    """'Channel 3 applied to 2 locked panel(s); 1 skipped (no channel 3:
-    panel 4)' — or, for several channels, 'Applied to 2 locked panel(s); 2
-    skipped (no channel 2: panel 5; no channel 3: panels 4–5)'."""
+    """'applied to 2 locked panels; 1 skipped (no channel 3: panel 4)' — or,
+    for several channels, 'applied to 1 locked panel; 2 skipped (no channel
+    2: panel 5; no channel 3: panels 4–5)'. The status bar's label already
+    names the channel ("Channel 3 white: …")."""
     if not skipped:
         return ""
     by_channel: dict[int, list[Panel]] = {}
@@ -1012,11 +1014,9 @@ def skipped_note(figure: Figure, skipped: dict[str, set[int]], n_applied: int) -
                 by_channel.setdefault(idx, []).append(p)
     if not by_channel:
         return ""
-    head = (f"Channel {next(iter(by_channel)) + 1} applied" if len(by_channel) == 1
-            else "Applied")
     why = "; ".join(f"no channel {idx + 1}: {L.panel_numbers(figure, ps)}"
                     for idx, ps in sorted(by_channel.items()))
-    return f"{head} to {n_applied} locked panel(s); {len(skipped)} skipped ({why})"
+    return f"applied to {plural(n_applied, 'locked panel')}; {len(skipped)} skipped ({why})"
 
 
 def locked_settings_differ(panels: list[Panel]) -> list[Panel]:

@@ -296,3 +296,47 @@ def test_integrity_report_lists_exports(env, workspace):
     html = write_integrity_html(report, out / "integrity.html").read_text()
     assert "Pycrograph integrity report" in html and "fig.svg" in html and "modified" in html
     assert io.StringIO(html).read().startswith("<!doctype html>")
+
+
+def _svg_texts(svg: str) -> list[str]:
+    """Text content of every <text> element (QSvgGenerator writes one per run)."""
+    return [re.sub(r"<[^>]+>", "", t).strip()
+            for t in re.findall(r"<text\b[^>]*>(.*?)</text>", svg, flags=re.S)]
+
+
+def test_hidden_inset_number_not_exported(env, workspace):
+    p, fig, renderer, refs, (pa, pb, pc, inset), out = env
+    shown = export_figure(workspace, p, fig, renderer, out / "shown.svg", ExportSettings("svg"))
+    texts = _svg_texts(shown.files[0].read_text())
+    assert texts.count("1") == 2                       # on the inset + next to its rectangle
+    side = json.loads(shown.sidecar.read_text())
+    rec = next(r for r in side["panels"] if r["id"] == inset.id)
+    assert (rec["inset"]["number"], rec["inset"]["number_shown"]) == (1, True)
+
+    inset.inset_style.show_number = False
+    hidden = export_figure(workspace, p, fig, renderer, out / "hidden.svg", ExportSettings("svg"))
+    svg = hidden.files[0].read_text()
+    assert "1" not in _svg_texts(svg)                  # neither number is drawn
+    assert "Nuc_ER_ER" in svg                           # other text still there
+    assert "#ffff00" in svg.lower()                     # rectangle / border colour kept
+    side = json.loads(hidden.sidecar.read_text())
+    rec = next(r for r in side["panels"] if r["id"] == inset.id)
+    assert (rec["inset"]["number"], rec["inset"]["number_shown"]) == (1, False)
+    # PDF: exactly the two number text blocks disappear.
+    pdf_hidden = export_figure(workspace, p, fig, renderer, out / "hidden.pdf", ExportSettings("pdf"))
+    inset.inset_style.show_number = True
+    pdf_shown = export_figure(workspace, p, fig, renderer, out / "shown.pdf", ExportSettings("pdf"))
+    assert _pdf_text_blocks(pdf_shown.files[0].read_bytes()) - \
+        _pdf_text_blocks(pdf_hidden.files[0].read_bytes()) == 2
+
+
+def _pdf_text_blocks(data: bytes) -> int:
+    """Number of BT…ET text objects in the PDF's (Flate) content streams."""
+    n = 0
+    for m in re.finditer(rb"stream\r?\n(.*?)\r?\nendstream", data, flags=re.S):
+        try:
+            body = zlib.decompress(m.group(1))
+        except zlib.error:
+            continue
+        n += len(re.findall(rb"(?:^|\s)BT\s", body))
+    return n

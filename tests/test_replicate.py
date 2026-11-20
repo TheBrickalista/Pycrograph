@@ -18,6 +18,7 @@ from pycrograph import insets as I
 from pycrograph import layout as L
 from pycrograph import viewport as V
 from pycrograph.figures import FigureEditor, create_figure
+from pycrograph.models import PROJECT_FORMAT_VERSION
 from pycrograph.storage import create_dataset, register_image, set_image_hash, sha256_file
 from synth import metamorph_xml, reference_like_plane, write_metamorph_tiff
 
@@ -263,7 +264,8 @@ def test_migrate_v2_project(workspace, env):
     st = q.figures[0].panels[1].inset_style
     assert (st.region_group, st.region_link) == (None, "region")
     assert q.operation_log[-1].operation == "project.migrate"
-    assert (q.operation_log[-1].old_value, q.operation_log[-1].new_value) == (2, 3)
+    assert (q.operation_log[-1].old_value, q.operation_log[-1].new_value) == \
+        (2, PROJECT_FORMAT_VERSION)
 
 
 def test_light_archive_covers_replicated_regions(workspace, env, tmp_path):

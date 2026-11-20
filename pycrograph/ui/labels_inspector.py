@@ -40,6 +40,7 @@ from ..figures import label_key
 from ..labels import TOKENS
 from ..models import Panel, PanelLabel
 from ..scalebar import BAR_UNITS, ScaleBarUnavailable, bar_geometry, unit_label
+from ..ui_text import plural
 
 if TYPE_CHECKING:                                   # pragma: no cover
     from .figures_tab import FiguresTab
@@ -323,7 +324,7 @@ class LabelsInspector(QScrollArea):
         if not calibrated:
             self.bar_reason.setText("Unavailable: " + "; ".join(dict.fromkeys(reasons)))
         elif reasons:
-            self.bar_reason.setText(f"{len(P) - len(calibrated)} of {len(P)} panel(s) skipped: "
+            self.bar_reason.setText(f"{len(P) - len(calibrated)} of {plural(len(P), 'panel')} skipped: "
                                     + "; ".join(dict.fromkeys(reasons)))
         else:
             self.bar_reason.setText("")

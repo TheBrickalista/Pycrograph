@@ -41,6 +41,7 @@ from .. import viewport as V
 from ..display import auto_window, compute_saturation_stats
 from ..models import ChannelInfo, ChannelSettings, ImageRef, Panel
 from ..render import RenderError
+from ..ui_text import plural
 from .channel_controls import HIDDEN_HANDLE, MIXED_TEXT, ChannelControls
 
 if TYPE_CHECKING:                                   # pragma: no cover
@@ -76,7 +77,7 @@ def _values(panels: list[Panel], get: Callable[[Panel], Any]) -> list:
 
 def lock_text(panels: list[Panel], fig) -> str:
     """The lock indicator, by kind and size — never the internal group id.
-    '🔒 Locked with N other panel(s) (split row)'; '🔒 Mixed: montage, manual
+    '🔒 Locked with 2 other panels (split row)'; '🔒 Mixed: montage, manual
     lock + unlocked panels'."""
     groups = [p.lock_group for p in panels]
     named = list(dict.fromkeys(g for g in groups if g))
@@ -87,7 +88,7 @@ def lock_text(panels: list[Panel], fig) -> str:
         members = sum(1 for q in fig.panels if q.lock_group == g) if fig else len(panels)
         others = members - len(panels)
         if others > 0:
-            return f"🔒 Locked with {others} other panel(s) ({L.lock_kind(g)})"
+            return f"🔒 Locked with {plural(others, 'other panel')} ({L.lock_kind(g)})"
         return f"🔒 Locked: the whole group is selected ({members} panels, {L.lock_kind(g)})"
     kinds = list(dict.fromkeys(L.lock_kind(g) for g in named))
     return "🔒 Mixed: " + ", ".join(kinds) + (" + unlocked panels" if not all(groups) else "")

@@ -238,9 +238,9 @@ def test_lock_label_kinds_never_ids(app, setup):
     w, ids, (pa, pb, pc) = setup
     fig = w.figures_tab.current_figure()
     pa.lock_group = pb.lock_group = pc.lock_group = "split:abc123"
-    assert lock_text([pa], fig) == "🔒 Locked with 2 other panel(s) (split row)"
+    assert lock_text([pa], fig) == "🔒 Locked with 2 other panels (split row)"
     pc.lock_group = "grid:abc123:row1"
-    assert lock_text([pa], fig) == "🔒 Locked with 1 other panel(s) (split row)"
+    assert lock_text([pa], fig) == "🔒 Locked with 1 other panel (split row)"
     assert lock_text([pa, pc], fig) == "🔒 Mixed: split row, condition grid"
     pb.lock_group = None
     assert lock_text([pa, pb, pc], fig) == "🔒 Mixed: split row, condition grid + unlocked panels"
@@ -250,4 +250,4 @@ def test_lock_label_kinds_never_ids(app, setup):
     pa.lock_group = pb.lock_group = "lock:zz9"
     pc.lock_group = None
     w.figures_tab.canvas.select_ids([pa.id])
-    assert w.figures_tab.inspector.lock_label.text() == "🔒 Locked with 1 other panel(s) (manual lock)"
+    assert w.figures_tab.inspector.lock_label.text() == "🔒 Locked with 1 other panel (manual lock)"

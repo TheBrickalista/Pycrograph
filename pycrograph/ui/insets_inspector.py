@@ -37,6 +37,7 @@ from PySide6.QtWidgets import (
 
 from .. import insets as I
 from ..models import InsetStyle, Panel
+from ..ui_text import plural
 from .labels_inspector import ColorButton, _section
 
 if TYPE_CHECKING:                                   # pragma: no cover
@@ -122,6 +123,7 @@ class InsetsInspector(QScrollArea):
         self.flags: dict[str, QCheckBox] = {}
         for key, text in (("show_on_parent", "Rectangle on the parent"),
                           ("border_on_inset", "Matching border on the inset"),
+                          ("show_number", "Show number"),
                           ("follow_parent_tz", "Follow the parent's T / Z"),
                           ("follow_parent_rendering", "Follow the parent's channels")):
             cb = QCheckBox(text)
@@ -212,7 +214,7 @@ class InsetsInspector(QScrollArea):
         plain = [p for p in P if p.inset_of is None]
         self.create_btn.setEnabled(bool(plain) and all(self.tab.ref(p) is not None for p in plain))
         self.create_btn.setText("Create inset…" if len(plain) <= 1 else
-                                f"Create inset… (then offer it on {len(plain) - 1} other panel(s))")
+                                f"Create inset… (then offer it on {plural(len(plain) - 1, 'other panel')})")
         src, why = self.tab.replicate_source()
         if src is not None and not self.tab.replicate_candidates(src.id)[1].get("Eligible panels"):
             src, why = None, "No other panel in the figure to replicate to"
@@ -224,7 +226,7 @@ class InsetsInspector(QScrollArea):
         for p in P:
             kids = I.insets_of(fig, p.id) if fig else []
             if kids:
-                lines.append(f"Parent of {len(kids)} inset(s): " + ", ".join(
+                lines.append(f"Parent of {plural(len(kids), 'inset')}: " + ", ".join(
                     f"{k + 1} ({c.inset_style.color if c.inset_style else '?'})"
                     for k, c in enumerate(kids)))
         for p in insets:

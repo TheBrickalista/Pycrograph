@@ -16,7 +16,7 @@ and a preview pane.
   once).
 - Missing source files are greyed and cannot be selected (reason in the
   tooltip); changed / modified ones can, with the Library's status suffix.
-- Double-click on an image adds it and closes; "Add N image(s)" adds the
+- Double-click on an image adds it and closes; "Add N images" adds the
   selection.
 - "Import from disk…" does not import: it emits `import_requested(dataset
   id)`; the main window runs its import flow (by reference) and calls
@@ -39,6 +39,7 @@ from PySide6.QtWidgets import (
 
 from ..models import Project
 from ..storage import search_images
+from ..ui_text import plural
 from .image_tree import item_data, iter_image_items, metadata_html, populate_image_tree
 
 RATINGS = ["Any ★", "≥ ★", "≥ ★★", "≥ ★★★", "≥ ★★★★", "★★★★★"]
@@ -237,7 +238,7 @@ class AddImagesDialog(QDialog):
             if d and d[0] == "dataset":
                 ds = self.project.dataset(d[1])
                 n = len(ds.image_ids) if ds else 0
-                self.info.setHtml(f"<b>{ds.name if ds else ''}</b><br>{n} image(s). Selecting the "
+                self.info.setHtml(f"<b>{ds.name if ds else ''}</b><br>{plural(n, 'image')}. Selecting the "
                                   "dataset adds all its visible images.")
             else:
                 self.info.setHtml("<i>Select images or a dataset.</i>")

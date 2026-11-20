@@ -65,6 +65,7 @@ from .provenance import (
 from .render import PanelRenderer, RenderError
 from .storage import RefStatus, Workspace, check_image, log_operation, sha256_file, utc_now
 from .ui.scene_builder import export_scene, rgb_to_qimage
+from .ui_text import plural
 
 Format = Literal["pdf", "svg", "tiff", "png"]
 FORMATS: tuple[str, ...] = ("pdf", "svg", "tiff", "png")
@@ -379,7 +380,7 @@ def export_figure(workspace: Workspace, project: Project, figure: Figure, render
     hashes = {str(p): sha256_file(p) for p in outputs}
     note = []
     if overridden:
-        note.append(f"exported despite {len(overridden)} consistency warning(s): "
+        note.append(f"exported despite {plural(len(overridden), 'consistency warning')}: "
                     + "; ".join(i["message"] for i in overridden[:10]))
     note += warnings
     log_operation(project, "export.figure", target_type="figure", target_id=figure.id,

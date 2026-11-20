@@ -63,7 +63,7 @@ def test_multi_selection_mixed_and_skips(app, setup):
     c1.white_spin.setValue(5000)
     [e] = entries_since(w, n)
     assert (e.target_id, e.field, e.new_value) == (pb.id, "channels[1].white", 5000)
-    assert "1 panel(s) skipped" in w.statusBar().currentMessage()
+    assert "1 panel skipped" in w.statusBar().currentMessage()
 
     # Touching a mixed control sets every panel: one entry per panel.
     n = len(w.project.operation_log)
