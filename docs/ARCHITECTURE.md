@@ -51,7 +51,8 @@ hash-chained operation log, and a PySide6 `QGraphicsView` UI.
 | `ui/panel_overlays.py` | Labels, scale bar, border, inset rectangles / borders / numbers and shapes as vector child items of each panel (page mm), tagged by kind for the export; interactive inset rectangles and shapes |
 | `ui/page_setup.py` | Page setup dialog (preset, size, orientation, pages, background, grid, snap) |
 | `ui/panel_inspector.py` | Preview tab: edits all selected panels with mixed states; viewport mini-view, zoom, rotation/flips, T/Z + max projection, channel controls by index, copy/paste rendering and viewport, image defaults, replace image |
-| `ui/info_tabs.py` | Preferences (editable journal presets, default preset) and About |
+| `ui/info_tabs.py` | Preferences (editable journal presets, default preset) and About (Legal / Copyright & Credits / Repository, as in PysternBlot) |
+| `credits.py` | Authors, copyright line, third-party list, citation and DOI line from the bundled `CITATION.cff` (Home and About tabs) |
 | `ui/library_panel.py` | Virtual tree, search/rating filter, metadata, tags / rating / key–values |
 | `ui/channel_controls.py` | One channel: visibility, LUT, histogram gates, Black/White, gamma, invert, saturation; mixed state for multi-panel editing |
 | `ui/workers.py` | Background hashing (`QThreadPool`, one file at a time) |
@@ -207,7 +208,11 @@ pass; they attach `Pycrograph-<tag>-macOS.zip` / `-Windows.exe` to the
 release) → PyPI trusted publishing (environment `pypi`), skipped for
 pre-releases. `scripts/make_version_file.py` validates the version (x.y.z or a
 PEP 440 a/b/rc pre-release) for the release-tag check, Info.plist and the
-Windows version resource. Both builds run `--selfcheck` on the artifact.
+Windows version resource. Both builds regenerate
+`resources/THIRD_PARTY_NOTICES.txt` from their locked environment
+(`scripts/make_third_party_notices.py`) before PyInstaller, bundle
+`pycrograph/resources` (logo, icon, `LICENSE.txt`, notices, `CITATION.cff`)
+and run `--selfcheck` on the artifact, which checks those files.
 `tests/test_workflows_hardening.py` guards permissions, pinned actions and
 runners, credentials, event data in shell, and the release gating.
 

@@ -94,6 +94,11 @@ jobs:
         run: |
           uv run python scripts/make_version_file.py pyproject.toml build/version_file.txt
 
+      - name: Third-party notices from the locked environment
+        # This platform's wheels (NumPy / Pillow vendor different libraries
+        # per OS); bundled with pycrograph/resources (About > Copyright & Credits).
+        run: uv run python scripts/make_third_party_notices.py
+
       - name: Build .exe with PyInstaller
         run: |
           uv run pyinstaller `

@@ -87,6 +87,11 @@ jobs:
           iconutil -c icns build/pycrograph.iconset \
             -o build/pycrograph.icns
 
+      - name: Third-party notices from the locked environment
+        # This platform's wheels (NumPy / Pillow vendor different libraries
+        # per OS); bundled with pycrograph/resources (About > Copyright & Credits).
+        run: uv run python scripts/make_third_party_notices.py
+
       - name: Build .app with PyInstaller
         run: |
           uv run pyinstaller \

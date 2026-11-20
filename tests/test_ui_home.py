@@ -71,9 +71,11 @@ def test_copyright_names_the_citation_authors(window):
 
 
 def test_about_tab_shows_the_same_copyright(window):
-    text = plain(window.about_tab.text.text())
-    assert COPYRIGHT in text.splitlines()
-    assert "Boulter E, Féral CC. Pycrograph (version" in text
+    about = window.about_tab
+    about.credits_btn.click()
+    assert about.view.toPlainText().splitlines()[0] == f"Pycrograph — {COPYRIGHT}"
+    about.repo_btn.click()
+    assert "Boulter E, Féral CC (2026). Pycrograph (version" in about.view.toPlainText()
 
 
 def test_logo_pixmap_is_hidpi_sharp(app):
