@@ -16,6 +16,7 @@ from pycrograph import __version__, credits  # noqa: E402
 from pycrograph.ui import info_tabs  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
+CONCEPT_DOI = "10.5281/zenodo.24404763"
 COPYRIGHT = ("Copyright © 2026 Etienne Boulter, Chloé C. Féral — "
              "Université Côte d'Azur, CNRS, Inserm, IRCAN")
 
@@ -73,24 +74,28 @@ def test_repository(about):
     assert "  https://github.com/TheBrickalista/Pycrograph/issues" in lines
     assert (f"  Boulter E, Féral CC (2026). Pycrograph (version {__version__}) "
             "[Computer software]. https://github.com/TheBrickalista/Pycrograph") in lines
-    # CITATION.cff has no top-level doi yet (PysternBlot's reference doi is not ours).
-    assert "  DOI: assigned by Zenodo at the first release" in lines
-    assert "zenodo.20185279" not in text
+    # The concept DOI from the bundled CITATION.cff (PysternBlot's reference
+    # doi, nested under references:, is not ours).
+    assert f"  DOI: https://doi.org/{CONCEPT_DOI}" in lines
+    assert "  (concept DOI: always resolves to the latest version)" in lines
+    assert credits.NO_DOI not in text and "zenodo.20185279" not in text
 
 
-def test_repository_text_with_a_doi():
+def test_repository_text_with_and_without_a_doi():
     cff = (ROOT / "CITATION.cff").read_text(encoding="utf-8")
-    assert credits.parse_cff(cff).doi is None
-    with_doi = cff.replace("# doi: added once the first release is archived on Zenodo",
-                           "doi: 10.5281/zenodo.30000001")
-    assert with_doi != cff
-    c = credits.parse_cff(with_doi)
-    assert c.doi == "10.5281/zenodo.30000001"
+    c = credits.parse_cff(cff)
+    assert c.doi == CONCEPT_DOI
     assert c.authors == (("Etienne", "Boulter"), ("Chloé C.", "Féral"))
     assert (c.year, c.version) == ("2026", __version__)
-    text = credits.repository_text(__version__, with_doi)
-    assert "  DOI: https://doi.org/10.5281/zenodo.30000001" in text.splitlines()
+    text = credits.repository_text(__version__, cff)
+    assert f"  DOI: https://doi.org/{CONCEPT_DOI}" in text.splitlines()
     assert "concept DOI" in text and credits.NO_DOI not in text
+    # Without a top-level doi: (as before the first Zenodo record).
+    without = cff.replace(f"doi: {CONCEPT_DOI}\n", "")
+    assert without != cff and credits.parse_cff(without).doi is None
+    text = credits.repository_text(__version__, without)
+    assert "  DOI: assigned by Zenodo at the first release" in text.splitlines()
+    assert "concept DOI" not in text
 
 
 def test_initials():

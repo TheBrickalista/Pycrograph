@@ -6,6 +6,18 @@
 
 **Publication figures from fluorescence microscopy images — non-destructive and provenance-tracked.**
 
+[![DOI](https://zenodo.org/badge/1462903688.svg)](https://doi.org/10.5281/zenodo.24404763)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+[![Python](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org)
+[![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-lightgrey.svg)](https://github.com/TheBrickalista/Pycrograph/releases)
+[![Release](https://img.shields.io/github/v/release/TheBrickalista/Pycrograph?include_prereleases&label=release)](https://github.com/TheBrickalista/Pycrograph/releases)
+[![Documentation Status](https://readthedocs.org/projects/pycrograph/badge/?version=latest)](https://pycrograph.readthedocs.io/en/latest/)
+[![Tests](https://github.com/TheBrickalista/Pycrograph/actions/workflows/pytest.yml/badge.svg?branch=main)](https://github.com/TheBrickalista/Pycrograph/actions/workflows/pytest.yml)
+
+→ **[Quick Start](QUICKSTART.md)** — get up and running in a few minutes  
+→ **[Documentation](https://pycrograph.readthedocs.io)** — installation, user guide and concepts  
+→ **[Download](https://github.com/TheBrickalista/Pycrograph/releases)** — macOS and Windows apps (newest *Pre-release*), no Python needed
+
 Pycrograph is the imaging sister of [PysternBlot](https://github.com/TheBrickalista/PysternBlot)
 (Western blot figures). It keeps what OMERO.figure does well — figures re-rendered
 from raw data with recorded display settings — without a server.
@@ -77,6 +89,18 @@ uv run pytest
 # with the real MetaMorph reference image:
 PYCROGRAPH_SAMPLE_TIFF="/Volumes/LaCie/…/Nuc_ER_ER.tif" uv run pytest -m sample
 ```
+
+## Citing
+
+If you use Pycrograph in published work, please cite it:
+
+> Boulter E, Féral CC (2026). Pycrograph [Computer software].
+> https://doi.org/10.5281/zenodo.24404763
+
+This is the Zenodo **concept DOI**: it always resolves to the latest version.
+Each release also has its own version DOI on Zenodo, so you can cite the exact
+version you used. The citation metadata is in [`CITATION.cff`](CITATION.cff); GitHub
+renders it through **Cite this repository**.
 
 ## License
 

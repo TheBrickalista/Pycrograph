@@ -6,6 +6,9 @@ All notable changes to Pycrograph are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+- README badges, Zenodo DOI in CITATION.cff, manual CodeQL trigger.
+
 ## [0.2.0] - 2026-11-20
 
 First public beta. Figure editor (docs/design/figure-editor.md §6, steps 1 to 6),

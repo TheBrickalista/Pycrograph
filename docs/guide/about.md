@@ -18,10 +18,10 @@ bundled with the app (authors, year, version):
 > Boulter E, Féral CC (2026). Pycrograph (version 0.2.0) [Computer software].
 > https://github.com/TheBrickalista/Pycrograph
 
-followed by the DOI line. Every release, the 0.x betas included, is archived
-on Zenodo. Until the first record exists the line reads *DOI: assigned by
-Zenodo at the first release*; afterwards it gives the **concept DOI**, which
-always resolves to the latest version (Zenodo also lists a DOI per version).
+followed by the DOI line: the Zenodo **concept DOI**,
+[https://doi.org/10.5281/zenodo.24404763](https://doi.org/10.5281/zenodo.24404763), which always resolves
+to the latest version. Every release, the 0.x betas included, is archived on
+Zenodo with its own version DOI as well.
 
 The same citation metadata is in
 [`CITATION.cff`](https://github.com/TheBrickalista/Pycrograph/blob/main/CITATION.cff)

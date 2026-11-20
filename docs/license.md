@@ -42,7 +42,10 @@ dependency in `uv.lock` is covered.
 
 ## Citing Pycrograph
 
-If you use Pycrograph in published work, please cite it. Citation metadata is in
+If you use Pycrograph in published work, please cite it, with the Zenodo
+concept DOI [https://doi.org/10.5281/zenodo.24404763](https://doi.org/10.5281/zenodo.24404763). It always
+resolves to the latest version; each release also has its own version DOI on
+Zenodo. Citation metadata is in
 [`CITATION.cff`](https://github.com/TheBrickalista/Pycrograph/blob/main/CITATION.cff),
 which GitHub renders through **Cite this repository**.
 

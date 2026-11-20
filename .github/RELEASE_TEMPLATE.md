@@ -7,9 +7,10 @@ Every 0.x release is a beta: publish it with "Set as a pre-release" ticked
 (also for betas / release candidates such as 0.2.0b1). The signed apps are
 attached as usual, but publish.yml skips the PyPI upload for pre-releases
 (delete the pip row). Zenodo archives every published release, 0.x
-pre-releases included: check that the new record (and its DOI) appears on
-Zenodo; the first one's concept DOI goes into CITATION.cff (`doi:`), README
-and docs. From 1.0.0, stable releases also go to PyPI.
+pre-releases included: check that the new version record appears on Zenodo.
+The concept DOI (10.5281/zenodo.24404763, always the latest version) is
+already in CITATION.cff, the README and the docs: nothing to change per
+release. From 1.0.0, stable releases also go to PyPI.
 Not read by any workflow.
 -->
 

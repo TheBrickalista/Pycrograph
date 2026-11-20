@@ -81,8 +81,8 @@ def test_authors_and_pysternblot_reference(cff):
         "https://github.com/TheBrickalista/PysternBlot")
     assert [(p["given-names"], p["family-names"]) for p in pb["authors"]] == \
         [(g, f) for g, f, _o, _a in expected]
-    assert "doi" not in cff                                     # added once on Zenodo
-    assert "# doi: added once" in (ROOT / "CITATION.cff").read_text(encoding="utf-8")
+    assert cff["doi"] == "10.5281/zenodo.24404763"              # Zenodo concept DOI
+    assert DOI.match(cff["doi"])
 
 
 def test_app_credits_and_metadata_match_citation(cff):
