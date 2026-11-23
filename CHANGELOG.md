@@ -6,6 +6,16 @@ All notable changes to Pycrograph are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-11-23
+
+Second beta. A TIFF whose planes lie along one generic axis is now read as a
+Z-stack or a time-lapse from its per-plane z-positions, with a logged
+"Planes are: Time / Z" override in the Library viewer; existing images keep
+the mapping they were imported with. Docs and UI text describe the supported
+formats generically. Projects are saved in format 5 (migrated automatically
+on opening): **a project opened or saved by 0.2.1 can no longer be opened by
+0.2.0.**
+
 ### Added
 - **Time-lapse or Z-stack for TIFF planes.** A TIFF whose planes lie along
   one generic axis (tifffile `I`, e.g. a multi-page TIFF with one page per

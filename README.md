@@ -22,7 +22,7 @@ Pycrograph is the imaging sister of [PysternBlot](https://github.com/TheBrickali
 (Western blot figures). It keeps what OMERO.figure does well — figures re-rendered
 from raw data with recorded display settings — without a server.
 
-> **Status: beta (0.2.0).** 0.x releases are betas: GitHub pre-releases,
+> **Status: beta (0.2.1).** 0.x releases are betas: GitHub pre-releases,
 > each archived on Zenodo with a DOI. 1.0.0 will be the first stable
 > release, also published on PyPI.
 > Library, TIFF-family readers (plain, ImageJ, MetaMorph TIFF/STK), the

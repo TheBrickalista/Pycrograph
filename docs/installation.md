@@ -44,7 +44,7 @@ Every release build runs `--selfcheck` on the exact file you download
 ```bash
 git clone https://github.com/TheBrickalista/Pycrograph.git
 cd Pycrograph
-git checkout v0.2.0        # or stay on main for the latest code
+git checkout v0.2.1        # or stay on main for the latest code
 uv sync --extra dev        # or: pip install -e ".[dev]"
 uv run python -m pycrograph
 ```
