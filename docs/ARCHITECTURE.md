@@ -10,7 +10,7 @@ hash-chained operation log, and a PySide6 `QGraphicsView` UI.
 - **Display-only transforms.** Raw pixels are never modified; everything is
   re-rendered from the raw file + saved settings.
 - **Local only.** No server, no database, no network.
-- **Lazy loading.** Target machine: M1, 8 GB RAM; a MetaMorph time-lapse is
+- **Lazy loading.** Target machine: M1, 8 GB RAM; a time-lapse can be
   ~1.1 GB. A reader returns one plane at a time (memory-map or per-page read).
 
 ## Modules
@@ -232,20 +232,22 @@ T. Timestamps come from UIC2 creation date/time.
 
 ## Generic plane axis: T or Z
 
-tifffile names a plane axis it cannot identify `I` (or `Q`, …): a MetaMorph
-multi-page TIFF stores a Z-stack and a time-lapse the same way (one page per
-plane, axes `IYX`). When a series has exactly one such axis with more than one
+tifffile names a plane axis it cannot identify `I` (or `Q`, …): a
+multi-page TIFF with one page per plane (axes `IYX`, e.g. MetaMorph output)
+stores a Z-stack and a time-lapse the same way. When a series has exactly one such axis with more than one
 plane, and no T or Z axis of its own, `TiffSource` maps it:
 
 - **forced** (`plane_axis="T"|"Z"`): the user override, or the mapping
   recorded at import;
-- **inferred** at import: for a MetaMorph file with one page per plane, Z if the
-  per-plane `z-position` values form a regular series (`regular_z_step`: every
+- **inferred** at import: Pycrograph reads per-plane z-positions when the
+  file records them (currently MetaMorph `z-position`, one page per plane);
+  Z if they form a regular series (`regular_z_step`: every
   value present, at least `MIN_PLANES_FOR_Z` = 3 planes, strictly monotonic,
   `std(|Δz|) / mean(|Δz|) ≤ Z_STEP_REL_TOL` = 10 %). Then `z_step` = mean
   |Δz| (µm, as written by MetaMorph) and there are no time offsets.
   Otherwise T, the old rule: a time-lapse at fixed focus has a constant z, one
-  with autofocus moves z irregularly or both ways. Non-MetaMorph files: T.
+  with autofocus moves z irregularly or both ways. Files without per-plane
+  z-positions: T.
 
 The decision is kept in `metadata.raw["tiff.axis_inference"]`, e.g.
 `I→Z (MetaMorph z-position, step 0.5 µm)`, `I→T (default)`,

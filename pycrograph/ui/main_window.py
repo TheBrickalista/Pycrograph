@@ -253,7 +253,7 @@ class MainWindow(QMainWindow):
         split.setStretchFactor(1, 1)
         split.setStretchFactor(2, 0)
         split.setSizes([320, 700, 400])
-        self._show_placeholder("Create a project (New Project…) and import MetaMorph TIFF/STK files.")
+        self._show_placeholder("Create a project (New Project…) and import microscopy images (TIFF / STK).")
         self._rebuild_inspector()
         return split
 

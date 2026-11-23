@@ -8,9 +8,10 @@ All notable changes to Pycrograph are documented here. The format follows
 
 ### Added
 - **Time-lapse or Z-stack for TIFF planes.** A TIFF whose planes lie along
-  one generic axis (tifffile `I`, e.g. a MetaMorph multi-page TIFF) is read
-  as a **Z-stack** when its per-plane MetaMorph z-positions form a regular
-  series: at least 3 planes, strictly monotonic, step spread ≤ 10 %. The Z
+  one generic axis (tifffile `I`, e.g. a multi-page TIFF with one page per
+  plane) is read as a **Z-stack** when the file records per-plane
+  z-positions (currently MetaMorph) and they form a regular series: at
+  least 3 planes, strictly monotonic, step spread ≤ 10 %. The Z
   step comes from those positions. Otherwise it is read as a time-lapse, as
   before (constant z, or autofocus drift). The decision is recorded in
   `metadata.raw["tiff.axis_inference"]`, e.g. "I→Z (MetaMorph z-position,
@@ -29,6 +30,8 @@ All notable changes to Pycrograph are documented here. The format follows
 
 ### Changed
 - README badges, Zenodo DOI in CITATION.cff, manual CodeQL trigger.
+- Docs and UI text describe the supported formats generically (TIFF, ImageJ,
+  MetaMorph); MetaMorph is no longer presented as the only input.
 - Project format **5**: `ImageRef.plane_axis_override` (the migration writes
   `null`, logged as `project.migrate`).
 - TIFF reader revision 2 (`reader_version` "pycrograph … (tiff reader 2)").

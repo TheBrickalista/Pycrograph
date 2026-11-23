@@ -19,7 +19,8 @@ doi: 10.5281/zenodo.24404763
 abstract: >
   Pycrograph is a GPLv3 Python desktop application for building
   publication figures from fluorescence microscopy images. Raw files
-  (MetaMorph TIFF/STK) are registered by reference and never modified;
+  (TIFF, including ImageJ and MetaMorph TIFF/STK) are registered by
+  reference and never modified;
   every display setting (per-channel window, gamma, colour lookup table,
   orientation) is re-applied at render time. Provenance follows
   PysternBlot: SHA-256 source verification, hash-chained operation log
@@ -32,6 +33,7 @@ keywords:
   - PySide6
   - Python
   - fluorescence microscopy
+  - TIFF
   - MetaMorph
   - bioimaging
   - scientific software

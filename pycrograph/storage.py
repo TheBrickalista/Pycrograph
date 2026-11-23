@@ -16,7 +16,7 @@ Layout (default ~/.pycrograph)::
 
 Import by reference
 -------------------
-Microscopy files are too large to copy (a MetaMorph time-lapse is ~1.1 GB),
+Microscopy files are too large to copy (a time-lapse can be ~1.1 GB),
 so register_image() records the absolute path, size, mtime, reader + version
 and parsed metadata, and leaves sha256=None. The SHA-256 is computed
 afterwards (chunked, in a background thread in the UI) and stored with

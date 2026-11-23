@@ -25,7 +25,8 @@ from raw data with recorded display settings — without a server.
 > **Status: beta (0.2.0).** 0.x releases are betas: GitHub pre-releases,
 > each archived on Zenodo with a DOI. 1.0.0 will be the first stable
 > release, also published on PyPI.
-> Library, MetaMorph readers, the per-channel display pipeline, the figure
+> Library, TIFF-family readers (plain, ImageJ, MetaMorph TIFF/STK), the
+> per-channel display pipeline, the figure
 > editor (layout, labels, scale bars, insets, shapes), consistency check,
 > provenance-tracked export and `.pcarchive` archives work (see
 > [Roadmap](Roadmap.md)).
@@ -46,9 +47,10 @@ from raw data with recorded display settings — without a server.
 
 - Projects › Datasets › Images (OMERO-style virtual tree; one file can sit in
   several datasets), tags, key–value pairs, ratings, search.
-- MetaMorph TIFF (XML metadata: pixel size, illumination, wavelength,
-  objective/NA, exposure, acquisition time) and STK (multi-T / multi-Z /
-  interleaved channels), plain and ImageJ TIFF.
+- TIFF: plain, ImageJ (hyperstacks) and multi-page, with multi-T / multi-Z /
+  interleaved channels. MetaMorph TIFF and STK are the formats whose metadata
+  is read in full: pixel size, illumination, wavelength, objective/NA,
+  exposure, acquisition time, and Z vs T of the planes.
 - Background SHA-256; missing/changed/modified detection; hash-verified relink,
   including "drive was remounted as `/Volumes/LaCie 1`" for all images at once.
 - Per channel: on/off, LUT (named or custom colour), histogram with draggable
@@ -86,7 +88,7 @@ Python ≥ 3.11. The workspace lives in `~/.pycrograph` (override with
 
 ```bash
 uv run pytest
-# with the real MetaMorph reference image:
+# with the real reference image:
 PYCROGRAPH_SAMPLE_TIFF="/Volumes/LaCie/…/Nuc_ER_ER.tif" uv run pytest -m sample
 ```
 

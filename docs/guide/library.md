@@ -32,15 +32,16 @@ saturation badge. Rotation (90°) and flips are display settings too.
 ## Time-lapse or Z-stack?
 
 Some TIFF files do not say whether their planes are time points or Z
-positions. A MetaMorph multi-page TIFF stores both the same way, one page
-per plane. Pycrograph decides at import from MetaMorph's per-plane
-*z-position*:
+positions. A multi-page TIFF with one page per plane (MetaMorph output, for
+example) stores both the same way. Pycrograph reads the per-plane
+*z-positions* when the file records them (currently MetaMorph) and decides
+at import:
 
 - **Z-stack** when the positions change by a regular step (at least 3 planes,
   always in the same direction, step within ±10 %). The step becomes the Z
   step, so maximum projections, Z montages and `[z:um]` labels work.
-- **Time-lapse** otherwise: the same position for every plane, or small
-  autofocus moves up and down.
+- **Time-lapse** otherwise: the same position for every plane, small
+  autofocus moves up and down, or no per-plane positions in the file.
 
 For such files the viewer's T / Z row shows **Planes are: Time ▾ / Z ▾**, and
 the info pane shows the decision, for example *Plane axis: Z (MetaMorph

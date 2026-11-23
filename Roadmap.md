@@ -42,6 +42,6 @@ untouched, local only, provenance).
 
 - Background / flat-field correction: out of scope (default) vs a recorded,
   uniformly applied display operation.
-- Priority of formats beyond MetaMorph.
+- Order in which further formats are added.
 - Exact shared-core boundaries with PysternBlot.
 - Thumbnail grid view in the library (tree with thumbnails for now).
