@@ -240,6 +240,12 @@ class LibraryPanel(QWidget):
         menu.exec(self.tree.viewport().mapToGlobal(pos))
 
     # ------------------------------------------------------------ metadata
+    def refresh_metadata(self) -> None:
+        """Re-show the selected image's metadata (after it changed)."""
+        iid = self.selected_image_id()
+        if iid and self._project is not None:
+            self._show_metadata(self._project.images.get(iid))
+
     def _show_metadata(self, ref: Optional[ImageRef]) -> None:
         self.meta.setHtml(metadata_html(ref, self._status.get(ref.id, "ok") if ref else "ok"))
 

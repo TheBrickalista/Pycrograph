@@ -25,12 +25,28 @@ An STK stores N planes in one IFD. Pycrograph maps them to (T, Z, C):
   planes are taken as channel-interleaved (index = m * c + channel).
 - Z vs T: Z if the Z distances (UIC2) between successive plane groups are all
   non-zero, else T (time-lapse). Same rule as tifffile's own STK series.
+
+Generic plane axis (TIFF series)
+--------------------------------
+tifffile names a plane axis it cannot identify `I` (or `Q`, ...). When a
+series has exactly ONE such axis with more than one plane, and the file has
+no T or Z axis of its own, the axis is mapped to T or Z:
+- `plane_axis="T"` / `"Z"` (ImageRef.plane_axis_override, or the mapping
+  recorded at import, see readers.open_image_ref) forces it;
+- otherwise, for a MetaMorph file with one page per plane, Z if the per-plane
+  z-positions form a regular series (`regular_z_step`: every value present,
+  strictly monotonic, at least MIN_PLANES_FOR_Z planes, relative spread of the
+  step ≤ Z_STEP_REL_TOL); else T, the previous behaviour (a time-lapse with
+  autofocus moves z irregularly, or not at all).
+The decision is recorded in metadata.raw["tiff.axis_inference"], e.g.
+"I→Z (MetaMorph z-position, step 0.5 µm)" or "I→T (default)".
+Other generic axes keep the old rule (T); samples (S) become C.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Literal, Optional, Sequence
 
 import numpy as np
 import tifffile
@@ -42,8 +58,35 @@ from .metamorph import PlaneSummary, parse_description, plane_summary
 
 EAGER_LIMIT_BYTES = 512 * 1024 * 1024
 _SUPPORTED_DTYPES = {np.dtype("uint8"): "uint8", np.dtype("uint16"): "uint16"}
+Z_STEP_REL_TOL = 0.10       # max std(|Δz|) / mean(|Δz|) for a regular Z series
+MIN_PLANES_FOR_Z = 3        # two planes cannot tell a Z step from an autofocus move
+PlaneAxis = Literal["T", "Z"]
 _UNIT_TO_UM = {"um": 1.0, "µm": 1.0, "micron": 1.0, "microns": 1.0, "micrometer": 1.0,
                "nm": 1e-3, "mm": 1e3}
+
+
+def regular_z_step(zs: Sequence[Optional[float]]) -> Optional[float]:
+    """Mean |Δz| if the per-plane z-positions form a regular Z series (every
+    value present, at least MIN_PLANES_FOR_Z of them, strictly monotonic,
+    near-constant non-zero step); None otherwise."""
+    if len(zs) < MIN_PLANES_FOR_Z or any(z is None for z in zs):
+        return None
+    d = np.diff(np.asarray(zs, dtype=float))
+    if not (np.all(d > 0) or np.all(d < 0)):
+        return None
+    step = np.abs(d)
+    mean = float(np.mean(step))
+    if mean <= 0 or float(np.std(step)) / mean > Z_STEP_REL_TOL:
+        return None
+    return mean
+
+
+def axis_letter_of_inference(text: Optional[str]) -> Optional[str]:
+    """"I→Z (…)" -> "Z" (None if the text is not an axis inference)."""
+    if not text or "→" not in text:
+        return None
+    letter = text.split("→", 1)[1][:1]
+    return letter if letter in ("T", "Z") else None
 
 
 def _norm_unit(unit: Any) -> Optional[str]:
@@ -56,10 +99,25 @@ def _norm_unit(unit: Any) -> Optional[str]:
 
 
 class TiffSource(ImageSource):
-    reader_version = f"pycrograph {__version__}; tifffile {tifffile.__version__}"
+    # Revision 2: generic plane axis mapped to T or Z (z-position inference,
+    # plane_axis override). Bump when the same file can give other metadata.
+    reader_revision = 2
+    reader_version = (f"pycrograph {__version__} (tiff reader {reader_revision}); "
+                      f"tifffile {tifffile.__version__}")
 
-    def __init__(self, path: str | Path):
+    def __init__(self, path: str | Path, plane_axis: Optional[PlaneAxis] = None,
+                 plane_axis_reason: str = "user override"):
+        """plane_axis forces the mapping of a single generic plane axis (see
+        the module docstring); plane_axis_reason is what the inference
+        string says about it ("user override", "as imported")."""
         super().__init__(path)
+        if plane_axis not in (None, "T", "Z"):
+            raise ValueError(f"plane_axis must be 'T', 'Z' or None, not {plane_axis!r}")
+        self._plane_axis = plane_axis
+        self._plane_axis_reason = plane_axis_reason
+        # File letter of the generic plane axis that can be T or Z (e.g. "I"),
+        # None when the file has none (STK, hyperstacks, single planes).
+        self.generic_plane_axis: Optional[str] = None
         self.reader_name = "tiff"
         self._tif = tifffile.TiffFile(str(self.path))
         self._mm: Optional[np.ndarray] = None
@@ -221,9 +279,18 @@ class TiffSource(ImageSource):
             raise UnsupportedImageError(f"{self.path.name}: no Y/X axes in {axes!r}")
 
         # Map file axes onto T/Z/C. Unknown plane axes (I, Q, ...) become T,
-        # samples (S, e.g. RGB) become C.
+        # samples (S, e.g. RGB) become C. A single generic axis may become Z
+        # instead (forced, or inferred below from MetaMorph z-positions).
+        generic = [i for i, (a, n) in enumerate(zip(axes, shape))
+                   if a not in "TZCSYX" and n > 1]
+        gi = generic[0] if len(generic) == 1 and "T" not in axes and "Z" not in axes else None
+        if gi is not None:
+            self.generic_plane_axis = axes[gi]
         canon: list[str] = []
-        for a, n in zip(axes, shape):
+        for i, (a, n) in enumerate(zip(axes, shape)):
+            if i == gi:
+                canon.append(self._plane_axis or "T")
+                continue
             if a in "YX":
                 canon.append(a)
             elif a == "S":
@@ -241,7 +308,10 @@ class TiffSource(ImageSource):
         self._axes_canon = canon
         self._series_shape = shape
         self._samples_last = axes.endswith("S")
-        sizes = {k: (shape[canon.index(k)] if k in canon else 1) for k in "TZCYX"}
+
+        def axis_sizes() -> dict[str, int]:
+            return {k: (shape[canon.index(k)] if k in canon else 1) for k in "TZCYX"}
+        sizes = axis_sizes()
 
         if series.dataoffset is not None:
             self._mm = self._memmap(series.dataoffset, shape, series.dtype)
@@ -285,6 +355,24 @@ class TiffSource(ImageSource):
             except ValueError:
                 return s0
 
+        inference = None
+        if gi is not None:
+            letter = axes[gi]
+            if self._plane_axis is not None:
+                inference = f"{letter}→{self._plane_axis} ({self._plane_axis_reason})"
+            elif per_page:
+                # canon[gi] is "T" here: walk the generic axis as T, channel 0.
+                zs = [summary_at(t, 0, 0).z_position for t in range(shape[gi])]
+                step = regular_z_step(zs)
+                if step is not None:
+                    canon[gi] = "Z"
+                    sizes = axis_sizes()
+                    inference = f"{letter}→Z (MetaMorph z-position, step {step:g} µm)"
+                else:
+                    inference = f"{letter}→T (MetaMorph z-position not a regular Z series)"
+            else:
+                inference = f"{letter}→T (default)"
+
         channels = []
         for c in range(sizes["C"]):
             sc = summary_at(0, 0, c) if not self._samples_last else s0
@@ -304,7 +392,11 @@ class TiffSource(ImageSource):
                 time_offsets = [float((np.datetime64(x) - t0) / np.timedelta64(1, "s")) for x in times]
         if per_page and sizes["Z"] > 1:
             zs = [summary_at(0, z, 0).z_position for z in range(sizes["Z"])]
-            if all(v is not None for v in zs):
+            if gi is not None:
+                # Generic axis forced to Z: a step only for a regular series
+                # (an irregular z-position is no Z step: none is recorded).
+                cal.z_step = regular_z_step(zs)
+            elif all(v is not None for v in zs):
                 cal.z_step = float(np.mean(np.abs(np.diff(zs))))
 
         bit_depth = s0.bits_per_pixel or np.dtype(dtype_name).itemsize * 8
@@ -312,6 +404,8 @@ class TiffSource(ImageSource):
             bit_depth = np.dtype(dtype_name).itemsize * 8
         raw = dict(s0.raw)
         raw["tiff.axes"] = axes
+        if inference:
+            raw["tiff.axis_inference"] = inference
         if s0.application:
             raw["application"] = s0.application
         self._metadata = ImageMetadata(

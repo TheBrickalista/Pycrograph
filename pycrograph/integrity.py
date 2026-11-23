@@ -27,6 +27,7 @@ from .jsonsafe import dumps_strict
 from .logchain import verify_log_chain
 from .models import Project
 from .provenance import extract_block
+from .readers import plane_axis_record
 from .storage import RefStatus, Workspace, check_image, sha256_file, utc_now
 
 
@@ -61,6 +62,7 @@ def _image_record(workspace: Workspace, project: Project, ref, verify_hashes: bo
         "reader": ref.reader,
         "reader_version": ref.reader_version,
         "shape_tzcyx": list(m.shape.as_tuple()),
+        "plane_axis": plane_axis_record(ref),
         "dtype": m.dtype,
         "bit_depth": m.bit_depth,
         "calibration": m.calibration.model_dump(),
@@ -165,6 +167,15 @@ def write_integrity_json(report: dict[str, Any], path: str | Path) -> Path:
 # SHARED-CORE candidate (from PysternBlot: pysternblot/integrity.py write_integrity_html) — same
 # page style; content adapted to Pycrograph's report.
 _WARN = 'style="background:#fef3c7;color:#92400e;font-weight:bold;"'
+
+
+def _plane_axis_html(rec) -> str:
+    """Plane-axis mapping under the shape (user override highlighted)."""
+    if not rec:
+        return ""
+    text = _html.escape(f"plane axis {rec['axis']}: {rec['inference']}")
+    return f"<br><small>{text}</small>" if not rec.get("override") else \
+        f"<br><small {_WARN}>{text}</small>"
 _BAD = 'style="background:#fee2e2;color:#991b1b;font-weight:bold;"'
 
 
@@ -197,7 +208,7 @@ def write_integrity_html(report: dict[str, Any], path: str | Path) -> Path:
             f"{sha_cell}{status_cell}"
             f"<td>{esc(im['reader'])} {esc(im['reader_version'])}</td>"
             f"<td>{'×'.join(map(str, im['shape_tzcyx']))} · {esc(im['dtype'])} "
-            f"({im['bit_depth']}-bit)</td><td>{scale}</td>"
+            f"({im['bit_depth']}-bit){_plane_axis_html(im.get('plane_axis'))}</td><td>{scale}</td>"
             f"<td {_WARN if flags else ''}>{esc(flags)}</td></tr>")
     exp_rows = []
     for x in report.get("exports", []):

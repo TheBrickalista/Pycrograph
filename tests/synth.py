@@ -7,6 +7,9 @@ Synthetic MetaMorph fixtures.
   (the reference file Nuc_ER_ER.tif: 0.325 um/px, wavelength 630,
   _IllumSetting_ "5 TxRed", 40xOIL NA 1.3, exposure 500 ms).
 - write_metamorph_tiff(): single- or multi-page TIFF with that XML per page.
+- write_metamorph_planes(): a multi-page MetaMorph TIFF (one page per plane,
+  tifffile axes "IYX") whose pages carry the given z-positions: a Z-stack, a
+  time-lapse at constant z, or one with autofocus drift.
 - write_stk(): a MetaMorph STK written byte by byte — one IFD whose strip is
   followed by the remaining planes, plus UIC1 (calibration), UIC2 (per-plane
   Z distance + creation date/time) and UIC3 (per-plane wavelength) tags, the
@@ -79,6 +82,15 @@ def write_metamorph_tiff(path: Path, planes: Sequence[np.ndarray],
         for plane, xml in zip(planes, xmls):
             tw.write(plane, description=xml, metadata=None, contiguous=False)
     return path
+
+
+def write_metamorph_planes(path: Path, z_positions: Sequence[float], size: int = 16) -> Path:
+    """Plane i is filled with the value i + 1 (easy to identify)."""
+    planes = [np.full((size, size), i + 1, np.uint16) for i in range(len(z_positions))]
+    xmls = [metamorph_xml(width=size, height=size, z_pos=z,
+                          acq=f"20251029 15:42:{10 + i:02d}.000")
+            for i, z in enumerate(z_positions)]
+    return write_metamorph_tiff(path, planes, xmls)
 
 
 # ----------------------------------------------------------------- STK writer

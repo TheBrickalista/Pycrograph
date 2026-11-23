@@ -6,8 +6,35 @@ All notable changes to Pycrograph are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- **Time-lapse or Z-stack for TIFF planes.** A TIFF whose planes lie along
+  one generic axis (tifffile `I`, e.g. a MetaMorph multi-page TIFF) is read
+  as a **Z-stack** when its per-plane MetaMorph z-positions form a regular
+  series: at least 3 planes, strictly monotonic, step spread ≤ 10 %. The Z
+  step comes from those positions. Otherwise it is read as a time-lapse, as
+  before (constant z, or autofocus drift). The decision is recorded in
+  `metadata.raw["tiff.axis_inference"]`, e.g. "I→Z (MetaMorph z-position,
+  step 0.5 µm)".
+- **Planes are: Time / Z** selector in the Library viewer for such images
+  (`storage.set_plane_axis`, `ImageRef.plane_axis_override`). It re-reads the
+  metadata, resets the library position to the first plane and logs
+  `image.set` (field `plane_axis`). The raw file and its SHA-256 are untouched.
+  It is refused while a figure panel or inset uses the image (the error
+  lists the figures; remapping panels' T / Z is not supported), and for single
+  planes, files with their own T / Z axes, light-archive extracts and files
+  changed since import.
+- The Library info pane, the integrity report (JSON and HTML) and the
+  provenance sidecar record the plane-axis mapping (`plane_axis`: axis,
+  override, inference).
+
 ### Changed
 - README badges, Zenodo DOI in CITATION.cff, manual CodeQL trigger.
+- Project format **5**: `ImageRef.plane_axis_override` (the migration writes
+  `null`, logged as `project.migrate`).
+- TIFF reader revision 2 (`reader_version` "pycrograph … (tiff reader 2)").
+  **Existing images are not re-interpreted:** files are reopened with the
+  mapping recorded in the project (images imported before keep T) until the
+  user changes it.
 
 ## [0.2.0] - 2026-11-20
 

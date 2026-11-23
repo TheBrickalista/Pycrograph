@@ -36,6 +36,7 @@ from .figures import lock_members
 from .layout import lock_kind
 from .labels import channel_name, group_time_unit, plain_text, resolve_label
 from .models import Figure, ImageRef, Panel, Project
+from .readers import plane_axis_record
 from .render import crop_bounds
 from .scalebar import ScaleBarUnavailable, bar_geometry
 
@@ -145,7 +146,8 @@ def panel_record(project: Project, figure: Figure, panel: Panel, index: int,
                   "stored_relpath": ref.stored_relpath, "sha256_recorded": ref.sha256,
                   "original_present": ref.extract is None,
                   "reader": ref.reader, "reader_version": ref.reader_version,
-                  "shape_tzcyx": list(s.as_tuple()), "dtype": m.dtype, "bit_depth": m.bit_depth,
+                  "shape_tzcyx": list(s.as_tuple()), "plane_axis": plane_axis_record(ref),
+                  "dtype": m.dtype, "bit_depth": m.bit_depth,
                   "calibration": m.calibration.model_dump(), **(source or {})},
         "t": panel.t, "z": panel.z,
         "time_s": (m.time_offsets_s[panel.t] if m.time_offsets_s and panel.t < len(m.time_offsets_s)

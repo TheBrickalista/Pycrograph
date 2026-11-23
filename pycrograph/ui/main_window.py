@@ -28,7 +28,8 @@ import numpy as np
 from PySide6.QtCore import QSize, Qt, QTimer
 from PySide6.QtGui import QAction, QBrush, QColor, QFont, QImage, QPixmap
 from PySide6.QtWidgets import (
-    QApplication, QDialog, QFileDialog, QFrame, QGraphicsPixmapItem, QGraphicsScene, QHBoxLayout,
+    QApplication, QComboBox, QDialog, QFileDialog, QFrame, QGraphicsPixmapItem, QGraphicsScene,
+    QHBoxLayout,
     QInputDialog, QLabel, QMainWindow, QMessageBox, QProgressDialog, QPushButton,
     QScrollArea, QSlider, QSplitter, QTabWidget, QToolBar, QVBoxLayout, QWidget,
 )
@@ -37,7 +38,9 @@ from .. import __version__
 from ..display import apply_orientation, auto_window, compute_saturation_stats, render_composite
 from ..integrity import build_integrity_report, write_integrity_html, write_integrity_json
 from ..models import ChannelSettings, ImageRef, Project, SaturationStats
-from ..readers import IMPORT_FILE_FILTER, ImageSource, UnsupportedImageError, open_image_ref
+from ..readers import (
+    IMPORT_FILE_FILTER, ImageSource, UnsupportedImageError, open_image_ref, plane_axis_record,
+)
 from ..preferences import load_preferences, save_preferences
 from ..render import PanelRenderer
 from ..storage import (
@@ -45,7 +48,8 @@ from ..storage import (
     HashCancelled, RefStatus, RelinkError, Workspace, add_image_to_dataset, check_image,
     common_prefix_change, copy_into_project, create_dataset, log_operation, register_image,
     relink_by_prefix, relink_image, remove_image_from_dataset, rename_dataset,
-    set_dataset_hidden, set_image_annotation, set_image_hash, sha256_file, write_thumbnail,
+    PlaneAxisError, set_dataset_hidden, set_image_annotation, set_image_hash, set_plane_axis,
+    sha256_file, write_thumbnail,
 )
 from ..ui_text import plural
 from .channel_controls import ChannelControls
@@ -204,6 +208,16 @@ class MainWindow(QMainWindow):
         cl.addWidget(self.view, 1)
 
         nav = QHBoxLayout()
+        # Only for files whose planes lie along one generic axis (tifffile
+        # "I"): is it time or Z? (storage.set_plane_axis, logged)
+        self.plane_axis_label = QLabel("Planes are:")
+        self.plane_axis_combo = QComboBox()
+        self.plane_axis_combo.addItem("Time", "T")
+        self.plane_axis_combo.addItem("Z", "Z")
+        self.plane_axis_combo.activated.connect(self._on_plane_axis_chosen)
+        for w in (self.plane_axis_label, self.plane_axis_combo):
+            w.setVisible(False)
+            nav.addWidget(w)
         self.t_label = QLabel("T")
         self.t_slider = QSlider(Qt.Horizontal)
         self.z_label = QLabel("Z")
@@ -868,6 +882,7 @@ class MainWindow(QMainWindow):
             self.t_slider.setEnabled(False)
             self.z_slider.setEnabled(False)
             self.info_label.setText("")
+            self._sync_plane_axis_control()
             self._show_placeholder("Select an image." if self.project and self.project.images
                                    else "Import images (Import Images…) into a dataset.")
             return
@@ -879,6 +894,7 @@ class MainWindow(QMainWindow):
             slider.setEnabled(n > 1)
             slider.blockSignals(False)
         self._update_info_label()
+        self._sync_plane_axis_control()
         path = self.ws.resolve_image_path(self.project, ref)
         try:
             self.source = open_image_ref(path, ref)
@@ -932,6 +948,48 @@ class MainWindow(QMainWindow):
         self.scene.setSceneRect(0, 0, w, h)
         if fit or self.view.in_fit_mode:
             self.view.fit_scene()
+
+    def _sync_plane_axis_control(self) -> None:
+        """Show "Planes are: Time / Z" for an image with a generic plane
+        axis (several planes, not a light-archive extract)."""
+        ref = self.ref
+        rec = plane_axis_record(ref) if ref is not None and ref.extract is None else None
+        if rec is not None and ref.metadata.shape.T * ref.metadata.shape.Z <= 1:
+            rec = None
+        for w in (self.plane_axis_label, self.plane_axis_combo):
+            w.setVisible(rec is not None)
+        if rec is None:
+            return
+        self.plane_axis_combo.blockSignals(True)
+        self.plane_axis_combo.setCurrentIndex(self.plane_axis_combo.findData(rec["axis"]))
+        self.plane_axis_combo.blockSignals(False)
+        tip = (f"How this file's planes are read: {rec['inference']}.\n"
+               "Changing it is logged; refused while the image is used in a figure.")
+        for w in (self.plane_axis_label, self.plane_axis_combo):
+            w.setToolTip(tip)
+
+    def _on_plane_axis_chosen(self, index: int) -> None:
+        ref = self.ref
+        if self.project is None or ref is None:
+            return
+        axis = self.plane_axis_combo.itemData(index)
+        self.flush_pending()
+        try:
+            changed = set_plane_axis(self.ws, self.project, ref, axis)
+        except (PlaneAxisError, OSError, UnsupportedImageError) as exc:
+            QMessageBox.warning(self, "Planes are", str(exc))
+            self._sync_plane_axis_control()
+            return
+        if not changed:
+            return
+        self.save()
+        self.renderer.invalidate(ref.id)
+        self.library.refresh_metadata()
+        s = ref.metadata.shape
+        self.statusBar().showMessage(
+            f"{ref.filename}: planes read as {'Z' if axis == 'Z' else 'time'} "
+            f"(T {s.T} · Z {s.Z})", 6000)
+        self._on_image_selected(ref.id)              # reopen with the new mapping
 
     def _update_info_label(self) -> None:
         ref = self.ref

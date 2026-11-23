@@ -29,6 +29,36 @@ giving pixel size and field of view. Each channel has visibility, a LUT
 typed values, *Auto* (0.1–99.9 percentiles), *Full range*, gamma, invert and a
 saturation badge. Rotation (90°) and flips are display settings too.
 
+## Time-lapse or Z-stack?
+
+Some TIFF files do not say whether their planes are time points or Z
+positions. A MetaMorph multi-page TIFF stores both the same way, one page
+per plane. Pycrograph decides at import from MetaMorph's per-plane
+*z-position*:
+
+- **Z-stack** when the positions change by a regular step (at least 3 planes,
+  always in the same direction, step within ±10 %). The step becomes the Z
+  step, so maximum projections, Z montages and `[z:um]` labels work.
+- **Time-lapse** otherwise: the same position for every plane, or small
+  autofocus moves up and down.
+
+For such files the viewer's T / Z row shows **Planes are: Time ▾ / Z ▾**, and
+the info pane shows the decision, for example *Plane axis: Z (MetaMorph
+z-position, step 0.5 µm)*. If it is wrong, choose the other value. Pycrograph
+re-reads the file's metadata (the raw file and its SHA-256 are untouched),
+goes back to the first plane, and records the change in the project log.
+The integrity report and the export provenance record it too.
+
+**Refused when the image is in a figure.** Panels and insets remember which
+time point or Z plane they show (and Z projections). After a switch those
+numbers would point at other planes, so Pycrograph refuses the change and
+lists the figures that use the image. Remove its panels first (or switch the
+axis before adding the image to a figure). The change is also refused for a
+light-archive copy, whose archived planes keep their original numbering.
+
+Images imported with an earlier version keep the axis they were imported
+with (time) until you change it. Nothing is re-interpreted automatically.
+
 ## Missing or moved files
 
 A missing file shows ⚠. *Relink…* accepts a new location only if the file's

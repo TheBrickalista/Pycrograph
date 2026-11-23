@@ -32,7 +32,7 @@ hash-chained operation log, and a PySide6 `QGraphicsView` UI.
 | `selfcheck.py` | `--selfcheck`: offline check of an installed / packaged app (metadata, resources, Qt plugins, render + export), run by the release builds |
 | `scalebar.py` | Scale bar length on the page from the calibration and the viewport scale; reason when unavailable; non-isotropic pixels |
 | `render.py` | `PanelRenderer`: raw plane(s) or max projection → crop by array slicing → `render_composite` → orientation; LRU cache keyed by source hash + settings |
-| `readers/` | `ImageSource` interface (T, Z, C, Y, X; lazy `get_plane`); `open_image_ref` (original or light-archive extract, `extract.py`). `tiff.py`: plain TIFF, MetaMorph TIFF (XML), MetaMorph STK (UIC tags). `metamorph.py`: metadata parsing |
+| `readers/` | `ImageSource` interface (T, Z, C, Y, X; lazy `get_plane`); `open_image_ref` (original or light-archive extract, `extract.py`). `tiff.py`: plain TIFF, MetaMorph TIFF (XML), MetaMorph STK (UIC tags), T vs Z of a generic plane axis. `metamorph.py`: metadata parsing |
 | `display.py` | window → gamma → invert → LUT → additive composite → RGB8; orientation; saturation; auto-window |
 | `storage.py` | `Workspace` (atomic saves), import **by reference**, SHA-256, `check_image`, relink (single + drive-prefix), copy into project, annotations, thumbnails |
 | `logchain.py` | Hash-chained log — **shared-core** (verbatim from PysternBlot) |
@@ -229,3 +229,46 @@ An STK stores N planes in one IFD. If the per-plane wavelengths (UIC3) repeat
 with a period c > 1 the planes are channel-interleaved (C = c). The remaining
 axis is Z when the Z distances (UIC2) between plane groups are non-zero, else
 T. Timestamps come from UIC2 creation date/time.
+
+## Generic plane axis: T or Z
+
+tifffile names a plane axis it cannot identify `I` (or `Q`, …): a MetaMorph
+multi-page TIFF stores a Z-stack and a time-lapse the same way (one page per
+plane, axes `IYX`). When a series has exactly one such axis with more than one
+plane, and no T or Z axis of its own, `TiffSource` maps it:
+
+- **forced** (`plane_axis="T"|"Z"`): the user override, or the mapping
+  recorded at import;
+- **inferred** at import: for a MetaMorph file with one page per plane, Z if the
+  per-plane `z-position` values form a regular series (`regular_z_step`: every
+  value present, at least `MIN_PLANES_FOR_Z` = 3 planes, strictly monotonic,
+  `std(|Δz|) / mean(|Δz|) ≤ Z_STEP_REL_TOL` = 10 %). Then `z_step` = mean
+  |Δz| (µm, as written by MetaMorph) and there are no time offsets.
+  Otherwise T, the old rule: a time-lapse at fixed focus has a constant z, one
+  with autofocus moves z irregularly or both ways. Non-MetaMorph files: T.
+
+The decision is kept in `metadata.raw["tiff.axis_inference"]`, e.g.
+`I→Z (MetaMorph z-position, step 0.5 µm)`, `I→T (default)`,
+`I→Z (user override)`.
+
+**Never re-inferred.** `ImageRef.metadata` is written once, by
+`register_image` (or `set_plane_axis`); opening, rendering, thumbnails,
+archives and Check Sources never refresh it from the file.
+`readers.open_image_ref` reopens a file with the mapping the project
+records (`recorded_plane_axis`: the override, else the letter in the
+inference string, else T for images imported before the inference existed),
+so a newer reader cannot change the shape of an image that panels and
+display settings already index. Light-archive extracts read `ref.metadata`
+(the archived T/Z indices) and cannot be switched.
+
+**Override.** `ImageRef.plane_axis_override` (format 5) is set by
+`storage.set_plane_axis(workspace, project, ref, "T"|"Z")`: it re-reads the
+file with the override, replaces `ref.metadata`, resets the library position
+to T1 Z1 and logs `image.set` (field `plane_axis`, old → new; the raw file
+and its SHA-256 are untouched). It is refused when any figure panel or inset
+shows the image: panels keep T / Z indices and projections that would point
+at other planes, and remapping them is out of scope. Also refused for a
+single plane, a file without a generic axis (STK, hyperstacks), an extract, or
+a file changed since import. The mapping and inference string appear in the
+Library info, the integrity report and the provenance sidecar
+(`plane_axis`).

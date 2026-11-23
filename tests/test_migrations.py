@@ -96,8 +96,9 @@ def test_v3_to_v4_inset_show_number(workspace, mm_tiff):
     assert old == 3 and out["figures"][0]["panels"][1]["inset_style"]["show_number"] is True
     assert "show_number" not in (out["figures"][0]["panels"][0].get("inset_style") or {})
     q = workspace.load_project(p.project.id)
-    assert q.project.format_version == PROJECT_FORMAT_VERSION == 4
+    assert q.project.format_version == PROJECT_FORMAT_VERSION
     assert q.figures[0].panels[1].inset_style.show_number is True
     last = q.operation_log[-1]
-    assert last.operation == "project.migrate" and (last.old_value, last.new_value) == (3, 4)
+    assert last.operation == "project.migrate"
+    assert (last.old_value, last.new_value) == (3, PROJECT_FORMAT_VERSION)
     assert verify_log_chain(q).status == "ok"
