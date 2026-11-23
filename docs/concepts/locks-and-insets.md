@@ -48,8 +48,9 @@ For each target Pycrograph checks the geometry against the source image:
 
 - **Same region** shows the *same raw-pixel rectangle* in every image. Across
   separate files this assumes the images are **registered** (the same field):
-  the dialog shows whether the MetaMorph stage positions agree, differ or are
-  unknown, and warns unless they agree.
+  the dialog shows whether the stage positions recorded in the files
+  (currently read from MetaMorph metadata) agree, differ or are unknown, and
+  warns unless they agree.
 - **Same size** shows a region of the *same physical size* (µm) in every image,
   centred at the same relative position and kept inside the image; each inset
   can then be moved on its own.

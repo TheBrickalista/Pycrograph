@@ -16,7 +16,7 @@ Layout (default ~/.pycrograph)::
 
 Import by reference
 -------------------
-Microscopy files are too large to copy (a MetaMorph time-lapse is ~1.1 GB),
+Microscopy files are too large to copy (a time-lapse can be ~1.1 GB),
 so register_image() records the absolute path, size, mtime, reader + version
 and parsed metadata, and leaves sha256=None. The SHA-256 is computed
 afterwards (chunked, in a background thread in the UI) and stored with
@@ -55,7 +55,7 @@ from .models import (
     Project,
     ProjectMeta,
 )
-from .readers import UnsupportedImageError, open_image, open_image_ref
+from .readers import UnsupportedImageError, open_image, open_image_ref, recorded_plane_axis
 
 HASH_CHUNK = 4 * 1024 * 1024
 
@@ -491,6 +491,79 @@ def copy_into_project(workspace: Workspace, project: Project, image_id: str) -> 
     log_operation(project, "image.copy_into_project", target_type="image", target_id=ref.id,
                   asset_sha256=digest, field="stored_relpath", new_value=ref.stored_relpath)
     return ref
+
+
+# ------------------------------------------------------------- plane axis
+class PlaneAxisError(ValueError):
+    """set_plane_axis refused (message meant for the user)."""
+
+
+def figures_using_image(project: Project, image_id: str) -> list[str]:
+    """Names of the figures with a panel (or inset) showing the image."""
+    return [f.name for f in project.figures if any(p.image_id == image_id for p in f.panels)]
+
+
+def set_plane_axis(workspace: Workspace, project: Project, ref: ImageRef, axis: str) -> bool:
+    """Map the image's single generic plane axis (tifffile "I") to T or Z.
+
+    Refused (PlaneAxisError) for a light-archive extract, a file without
+    such an axis or with a single plane, a source changed since import, and
+    an image used by any figure panel or inset: panels store T / Z indices
+    and projections that would silently point at other planes (remapping
+    them is not supported). Otherwise the file is re-read with the
+    override, `ref.metadata` replaced (shape, Z step, time offsets), the
+    library position reset to T1 Z1 and one `image.set` entry logged
+    (field plane_axis). The raw file and its SHA-256 are untouched. Returns
+    False when `axis` is already the mapping (nothing done). The caller
+    saves."""
+    if axis not in ("T", "Z"):
+        raise ValueError(f"axis must be 'T' or 'Z', not {axis!r}")
+    if ref.extract is not None:
+        raise PlaneAxisError(
+            f"{ref.filename} was restored from a light archive: only the archived planes "
+            "exist, under the T / Z indices they were archived with.")
+    current = recorded_plane_axis(ref)
+    s = ref.metadata.shape
+    if s.T * s.Z <= 1:
+        raise PlaneAxisError(f"{ref.filename} has a single plane: nothing to map to T or Z.")
+    if current is None:
+        raise PlaneAxisError(
+            f"{ref.filename}: its T and Z come from the file itself "
+            f"({ref.reader}); only a generic plane axis can be switched.")
+    used = figures_using_image(project, ref.id)
+    if used:
+        raise PlaneAxisError(
+            f"{ref.filename} is used in {'figure' if len(used) == 1 else 'figures'} "
+            f"{', '.join(f'“{n}”' for n in used)}. Panels and insets keep T / Z positions "
+            "and projections, which would point at other planes; changing the plane axis "
+            "of an image in a figure is not supported. Remove its panels first, or import "
+            "the file again into another project.")
+    if axis == current:
+        return False
+    path = workspace.resolve_image_path(project, ref)
+    if not path.is_file():
+        raise PlaneAxisError(f"{ref.filename}: source file not found ({path}). Relink it first.")
+    st = path.stat()
+    if (st.st_size, st.st_mtime_ns) != (ref.size_bytes, ref.mtime_ns):
+        raise PlaneAxisError(f"{ref.filename}: the file changed since import. Run Check "
+                             "Sources first.")
+    with open_image(path, plane_axis=axis, plane_axis_reason="user override") as src:
+        if getattr(src, "generic_plane_axis", None) is None:
+            raise PlaneAxisError(
+                f"{ref.filename}: the file has no generic plane axis that can be T or Z.")
+        meta, reader_version = src.metadata, src.reader_version
+    new = meta.shape
+    if (new.T * new.Z, new.C, new.Y, new.X) != (s.T * s.Z, s.C, s.Y, s.X):
+        raise PlaneAxisError(f"{ref.filename}: the file no longer matches its recorded shape.")
+    ref.metadata = meta
+    ref.reader_version = reader_version
+    ref.plane_axis_override = axis
+    ref.display.t = ref.display.z = 0
+    log_operation(project, "image.set", target_type="image", target_id=ref.id,
+                  asset_sha256=ref.sha256, field="plane_axis", old_value=current,
+                  new_value=axis,
+                  note=f"T {new.T} · Z {new.Z}; {meta.raw.get('tiff.axis_inference', '')}")
+    return True
 
 
 # --------------------------------------------------------------- annotations

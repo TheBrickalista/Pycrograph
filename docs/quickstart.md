@@ -1,8 +1,8 @@
 # Quickstart
 
 1. **Home → New Project.** A project starts with an *Unsorted* dataset.
-2. **Library → Import Images…** Select MetaMorph `.tif` / `.stk` (or plain /
-   ImageJ TIFF) files. They are registered **by reference**: nothing is copied;
+2. **Library → Import Images…** Select your TIFF / STK files (plain, ImageJ
+   or MetaMorph). They are registered **by reference**: nothing is copied;
    the SHA-256 is computed in the background (⏳ in the tree until done).
 3. **Adjust the image's defaults** in the Library: per channel visibility, LUT,
    Black/White (histogram gates, sliders or typed values), *Auto*, gamma

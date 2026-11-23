@@ -6,8 +6,48 @@ All notable changes to Pycrograph are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-11-23
+
+Second beta. A TIFF whose planes lie along one generic axis is now read as a
+Z-stack or a time-lapse from its per-plane z-positions, with a logged
+"Planes are: Time / Z" override in the Library viewer; existing images keep
+the mapping they were imported with. Docs and UI text describe the supported
+formats generically. Projects are saved in format 5 (migrated automatically
+on opening): **a project opened or saved by 0.2.1 can no longer be opened by
+0.2.0.**
+
+### Added
+- **Time-lapse or Z-stack for TIFF planes.** A TIFF whose planes lie along
+  one generic axis (tifffile `I`, e.g. a multi-page TIFF with one page per
+  plane) is read as a **Z-stack** when the file records per-plane
+  z-positions (currently MetaMorph) and they form a regular series: at
+  least 3 planes, strictly monotonic, step spread ≤ 10 %. The Z
+  step comes from those positions. Otherwise it is read as a time-lapse, as
+  before (constant z, or autofocus drift). The decision is recorded in
+  `metadata.raw["tiff.axis_inference"]`, e.g. "I→Z (MetaMorph z-position,
+  step 0.5 µm)".
+- **Planes are: Time / Z** selector in the Library viewer for such images
+  (`storage.set_plane_axis`, `ImageRef.plane_axis_override`). It re-reads the
+  metadata, resets the library position to the first plane and logs
+  `image.set` (field `plane_axis`). The raw file and its SHA-256 are untouched.
+  It is refused while a figure panel or inset uses the image (the error
+  lists the figures; remapping panels' T / Z is not supported), and for single
+  planes, files with their own T / Z axes, light-archive extracts and files
+  changed since import.
+- The Library info pane, the integrity report (JSON and HTML) and the
+  provenance sidecar record the plane-axis mapping (`plane_axis`: axis,
+  override, inference).
+
 ### Changed
 - README badges, Zenodo DOI in CITATION.cff, manual CodeQL trigger.
+- Docs and UI text describe the supported formats generically (TIFF, ImageJ,
+  MetaMorph); MetaMorph is no longer presented as the only input.
+- Project format **5**: `ImageRef.plane_axis_override` (the migration writes
+  `null`, logged as `project.migrate`).
+- TIFF reader revision 2 (`reader_version` "pycrograph … (tiff reader 2)").
+  **Existing images are not re-interpreted:** files are reopened with the
+  mapping recorded in the project (images imported before keep T) until the
+  user changes it.
 
 ## [0.2.0] - 2026-11-20
 

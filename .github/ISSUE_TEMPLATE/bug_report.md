@@ -15,6 +15,7 @@ labels: bug
 **Environment**
 - Pycrograph version (About):
 - OS / chip:
-- Image type (MetaMorph TIFF / STK / other) and size:
+- Image type and acquisition software (e.g. plain TIFF, ImageJ, MetaMorph
+  TIFF/STK) and size:
 
 **Integrity report or log excerpt** (optional)

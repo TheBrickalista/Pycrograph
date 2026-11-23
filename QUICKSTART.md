@@ -3,7 +3,8 @@
 1. **Run** `uv run python -m pycrograph`.
 2. **New Project…** — a project starts with an *Unsorted* dataset.
    Create datasets for your conditions with **New Dataset…** (or right-click the tree).
-3. **Import Images…** — select MetaMorph `.tif` / `.stk` files. They are
+3. **Import Images…** — select your TIFF / STK files (plain, ImageJ or
+   MetaMorph). They are
    registered **by reference**: nothing is copied, the SHA-256 is computed in the
    background (⏳ in the tree until done). Right-click → *Copy into project* if you
    want a self-contained project for a small file.

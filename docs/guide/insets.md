@@ -104,7 +104,7 @@ the nearest free place.
 |---|---|
 | **Panel** | The panel that will receive the inset (its number on the page and its file). |
 | **Geometry** | How its image compares with the inset's image. *same image*: the same file, for example another channel of it. *same size and pixel size*: another file with identical width × height and µm per pixel. *different geometry*: another size or pixel size, for example another objective. |
-| **Field** | Whether the microscope stage was at the same place for both images (read from MetaMorph metadata): *same stage position*, *stage position differs*, or *stage position unknown* when the file doesn't record it. |
+| **Field** | Whether the microscope stage was at the same place for both images (read from the file's stage-position metadata when it records one; currently MetaMorph): *same stage position*, *stage position differs*, or *stage position unknown* when the file doesn't record it. |
 | **Will show** | What that panel will actually get: *same region*, *same size*, or *same size (fallback: different geometry)*. An em dash (—) means the panel is not ticked. |
 
 ### Same region or Same size?
@@ -166,10 +166,11 @@ parent and all the insets follow.
 
 ![A split-channel row with a linked inset on every channel](../_static/img/insets-linked.png)
 
-### (b) MetaMorph files saved per wavelength (`_w1`, `_w2`…)
+### (b) One file per wavelength (`_w1`, `_w2`…)
 
-MetaMorph often saves each wavelength of one acquisition as its own file,
-for example `cell 2_w1GFP.tif` and `cell 2_w2TxRed.tif`. They have the same
+Some acquisition software saves each wavelength of one acquisition as its
+own file (as MetaMorph does, for instance), for example `cell 2_w1GFP.tif`
+and `cell 2_w2TxRed.tif`. They have the same
 size and pixel size, and the same stage position.
 
 1. Add both files (**Add Images…**, Ctrl/Cmd-click both, **Add 2 images**).

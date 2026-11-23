@@ -25,6 +25,7 @@ from PySide6.QtGui import QBrush, QColor, QIcon
 from PySide6.QtWidgets import QTreeWidget, QTreeWidgetItem
 
 from ..models import ImageRef, Project
+from ..readers import plane_axis_record
 
 ROLE = Qt.UserRole
 STATUS_TEXT = {
@@ -107,6 +108,13 @@ def iter_image_items(tree: QTreeWidget):
             yield ds.child(j)
 
 
+def plane_axis_text(rec: dict) -> str:
+    """"Z (MetaMorph z-position, step 0.5 µm)" from plane_axis_record."""
+    inference = rec["inference"]
+    reason = inference.split("→", 1)[1][1:].strip() if "→" in inference else inference
+    return f"{rec['axis']} {reason}".strip()
+
+
 def metadata_html(ref: Optional[ImageRef], status: str = "ok") -> str:
     """The metadata block of an image (Library info pane, Add Images preview)."""
     if ref is None:
@@ -126,6 +134,10 @@ def metadata_html(ref: Optional[ImageRef], status: str = "ok") -> str:
                         f" <small>({cal.source})</small>") if cal.is_calibrated else
          "<span style='color:#b45309'>not calibrated</span>"),
     ]
+    axis = plane_axis_record(ref)
+    if axis is not None:
+        rows.insert(next(i for i, r in enumerate(rows) if r[0] == "Dimensions") + 1,
+                    ("Plane axis", html.escape(plane_axis_text(axis))))
     if cal.z_step:
         rows.append(("Z step", f"{cal.z_step:g} {cal.unit}"))
     if m.objective or m.numerical_aperture:

@@ -15,7 +15,7 @@ below them shows; **Legal** is shown first.
 The **Repository** view gives the citation, built from the `CITATION.cff` file
 bundled with the app (authors, year, version):
 
-> Boulter E, Féral CC (2026). Pycrograph (version 0.2.0) [Computer software].
+> Boulter E, Féral CC (2026). Pycrograph (version 0.2.1) [Computer software].
 > https://github.com/TheBrickalista/Pycrograph
 
 followed by the DOI line: the Zenodo **concept DOI**,

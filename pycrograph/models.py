@@ -29,8 +29,9 @@ from pydantic import BaseModel, Field
 
 # Bump when the on-disk schema changes incompatibly; storage.load_project
 # refuses files with a higher version than it knows.
-PROJECT_FORMAT_VERSION = 4   # 2: Figure.page is a PageSetup; 3: InsetStyle region group;
-                             # 4: InsetStyle.show_number (migrations.py)
+PROJECT_FORMAT_VERSION = 5   # 2: Figure.page is a PageSetup; 3: InsetStyle region group;
+                             # 4: InsetStyle.show_number; 5: ImageRef.plane_axis_override
+                             # (migrations.py)
 
 Rotation = Literal[0, 90, 180, 270]
 
@@ -185,6 +186,10 @@ class ImageRef(BaseModel):
     warnings: List[str] = Field(default_factory=list)
     # Set when the image was restored from a light archive (an extract).
     extract: Optional[ExtractInfo] = None
+    # User choice for a file's single generic plane axis (tifffile "I"): T or
+    # Z. None = the mapping recorded at import (metadata.raw
+    # ["tiff.axis_inference"]). Set through storage.set_plane_axis (logged).
+    plane_axis_override: Optional[Literal["T", "Z"]] = None
 
 
 class Dataset(BaseModel):

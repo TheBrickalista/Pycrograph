@@ -162,7 +162,7 @@ def _resolve_contained(base_dir: Path, *components: str) -> Optional[Path]:
 
 
 # SHARED-CORE candidate (from PysternBlot: pysternblot/storage.py .pbarchive resource limits)
-# — adapted: a complete archive holds whole acquisitions (a MetaMorph time-lapse is
+# — adapted: a complete archive holds whole acquisitions (a time-lapse can be
 # ~1.1 GB), so the per-member and total caps are larger; members are streamed to disk,
 # never held in memory, so the caps bound disk use, not RAM.
 MAX_MEMBER_UNCOMPRESSED_BYTES = 16 * 1024 ** 3

@@ -21,6 +21,9 @@ Version history
 2 -> 3  ``InsetStyle`` gains ``region_group`` (None: not replicated) and
         ``region_link`` ("region"); written explicitly into every existing
         inset style so the migrated file is self-describing.
+3 -> 4  ``InsetStyle.show_number`` (True: numbers were always drawn).
+4 -> 5  ``ImageRef.plane_axis_override`` (None: keep the mapping recorded at
+        import; existing images are never re-interpreted).
 """
 
 from __future__ import annotations
@@ -68,10 +71,20 @@ def _v3_to_v4(data: dict[str, Any]) -> dict[str, Any]:
     return data
 
 
+def _v4_to_v5(data: dict[str, Any]) -> dict[str, Any]:
+    """ImageRef.plane_axis_override (None: the shape stays as imported)."""
+    images = data.get("images") or {}
+    for ref in (images.values() if isinstance(images, dict) else images):
+        if isinstance(ref, dict):
+            ref.setdefault("plane_axis_override", None)
+    return data
+
+
 MIGRATIONS: dict[int, Callable[[dict[str, Any]], dict[str, Any]]] = {
     1: _v1_to_v2,
     2: _v2_to_v3,
     3: _v3_to_v4,
+    4: _v4_to_v5,
 }
 
 
