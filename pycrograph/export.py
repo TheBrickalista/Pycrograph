@@ -53,6 +53,7 @@ from PySide6.QtGui import QColor, QFont, QImage, QPageSize, QPainter, QPdfWriter
 from PySide6.QtSvg import QSvgGenerator
 
 from . import __version__
+from .consistency import SMOOTH_INSET_WARNING, insets_below_dpi
 from .figures import panel_channel
 from .jsonsafe import dumps_strict
 from .labels import channel_name
@@ -60,7 +61,7 @@ from .layout import UNIT_TO_UM
 from .logchain import verify_log_chain
 from .models import Figure, Project
 from .provenance import (
-    SIDECAR_VERSION, SOURCES_TYPE, extract_block, figure_sidecar, rendered_crop, sidecar_name,
+    SOURCES_SIDECAR_VERSION, SOURCES_TYPE, extract_block, figure_sidecar, rendered_crop, sidecar_name,
 )
 from .render import PanelRenderer, RenderError
 from .storage import RefStatus, Workspace, check_image, log_operation, sha256_file, utc_now
@@ -340,6 +341,14 @@ def _info_page(project: Project, figure: Figure, renderer: PanelRenderer, sideca
 
 
 # -------------------------------------------------------------------- export
+def smooth_inset_warning(project: Project, figure: Figure, settings: ExportSettings) -> bool:
+    """A raster export with smooth (bilinear) resampling interpolates the
+    enlarged pixels of insets below the preset dpi. Vector formats embed
+    each panel at native resolution: never concerned."""
+    return (settings.format in ("tiff", "png") and settings.resampling == "smooth"
+            and bool(insets_below_dpi(project, figure)))
+
+
 def export_figure(workspace: Workspace, project: Project, figure: Figure, renderer: PanelRenderer,
                   path: str | Path, settings: ExportSettings,
                   overridden: Optional[list[dict]] = None) -> ExportResult:
@@ -353,6 +362,8 @@ def export_figure(workspace: Workspace, project: Project, figure: Figure, render
         raise ValueError(f"unknown resampling {settings.resampling!r}")
     sources, warnings = verify_sources(workspace, project, [p.image_id for p in figure.panels],
                                        settings.verify_hashes, settings.allow_modified)
+    if smooth_inset_warning(project, figure, settings):
+        warnings.append(SMOOTH_INSET_WARNING)          # not blocking; in the sidecar and log
     outputs = output_paths(path, fmt, figure.page.n_pages)
     sidecar_path = path.with_name(sidecar_name(path.name))
     sidecar = figure_sidecar(project, figure, settings.to_dict(figure), [p.name for p in outputs],
@@ -380,7 +391,7 @@ def export_figure(workspace: Workspace, project: Project, figure: Figure, render
     hashes = {str(p): sha256_file(p) for p in outputs}
     note = []
     if overridden:
-        note.append(f"exported despite {plural(len(overridden), 'consistency warning')}: "
+        note.append(f"exported despite {plural(len(overridden), 'consistency issue')}: "
                     + "; ".join(i["message"] for i in overridden[:10]))
     note += warnings
     log_operation(project, "export.figure", target_type="figure", target_id=figure.id,
@@ -451,7 +462,7 @@ def export_sources(workspace: Workspace, project: Project, figure: Figure, rende
                                      "note": "pixels written in raw orientation"},
         })
     sidecar_path = directory / sidecar_name(stem, sources=True)
-    sidecar = {"report_type": SOURCES_TYPE, "report_version": SIDECAR_VERSION,
+    sidecar = {"report_type": SOURCES_TYPE, "report_version": SOURCES_SIDECAR_VERSION,
                "generated_utc": utc_now(), "app": {"name": "Pycrograph", "version": __version__},
                "project": {"id": project.project.id, "name": project.project.name},
                "figure": {"id": figure.id, "name": figure.name},

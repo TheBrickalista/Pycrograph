@@ -95,3 +95,20 @@ def test_export_dialog_settings(app):
     s = dlg.settings()
     assert (s.format, s.dpi, s.resampling, s.info_page) == ("tiff", 450, "smooth", False)
     assert "2 pages" in dlg.pages_note.text()
+
+
+def test_export_dialog_smooth_inset_note(app):
+    from pycrograph.consistency import SMOOTH_INSET_WARNING
+    dlg = ExportDialog(300, 1, low_res_insets=2)
+    assert dlg.inset_note.text() == ""                          # PDF: native resolution
+    dlg.format.setCurrentIndex(dlg.format.findData("png"))
+    assert dlg.inset_note.text() == ""                          # nearest (default)
+    dlg.resampling.setCurrentIndex(dlg.resampling.findData("smooth"))
+    assert "2 insets below the page dpi" in dlg.inset_note.text()
+    assert SMOOTH_INSET_WARNING in dlg.inset_note.text()
+    dlg.format.setCurrentIndex(dlg.format.findData("svg"))
+    assert dlg.inset_note.text() == ""
+    none = ExportDialog(300, 1)
+    none.format.setCurrentIndex(none.format.findData("tiff"))
+    none.resampling.setCurrentIndex(none.resampling.findData("smooth"))
+    assert none.inset_note.text() == ""

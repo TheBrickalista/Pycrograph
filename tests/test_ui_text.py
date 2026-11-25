@@ -29,10 +29,9 @@ def test_noun():
 
 
 def test_consistency_summary_wording():
-    issue = lambda sev: C.Issue(sev, "x", "m", ())          # noqa: E731
-    assert C.summary([issue("error"), issue("warning"), issue("warning")]) == "1 error, 2 warnings"
-    assert C.summary([issue("info")]) == "1 info"
-    assert C.summary([issue("info"), issue("info")]) == "2 info"         # not "infos"
+    issue = lambda lv: C.Issue(lv, "x", "m", ())            # noqa: E731
+    assert C.summary([issue("critical"), issue("major"), issue("major")]) == "1 critical, 2 major"
+    assert C.summary([issue("minor"), issue("minor")]) == "2 minor"      # levels: no plural
     assert C.summary([]) == "no issue"
 
 

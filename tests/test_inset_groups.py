@@ -199,6 +199,6 @@ def test_invariant_checker_catches_divergence(env):
     [(msg, ids)] = I.group_invariant_issues(fig, p.images)
     assert "panel size or orientation" in msg and set(ids) == {src.id, cb.id, cc.id}
     [i] = [i for i in C.check_figure(p, fig) if i.code == "inset_group"]
-    assert i.severity == "warning"
+    assert i.level == "major"
     ed.edit([src.id], lambda q, r: V.pan(q, 64, 64, 1, 0) or True)  # any edit re-syncs
     consistent(p, fig)

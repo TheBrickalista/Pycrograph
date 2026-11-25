@@ -55,9 +55,14 @@ def test_consistency_rule_mixed_depth_lock(env):
         q.y_mm = 60 * k                                       # no row / column
         q.x_mm = 45 * k
     lock(ed, [a, b, c], p)
-    [i] = [i for i in C.check_figure(p, fig) if i.code == "bit_depth"]
-    assert i.severity == "warning"
-    assert i.message == "lock group (manual lock, panels 1–3): mixes 8-bit and 16-bit images"
+    issues = C.check_figure(p, fig)
+    [i] = [i for i in issues if i.code == "bit_depth"]
+    assert i.level == "major"
+    # The 8-bit member holds its own clamped copy of the levels: said here,
+    # not reported as a broken lock ("levels").
+    assert i.message == ("lock group (manual lock, panels 1–3): mixes 8-bit and 16-bit images; "
+                         "levels clamped to each image's range on channel 1")
+    assert not [i for i in issues if i.code == "levels"]
     assert set(i.panel_ids) == {a.id, b.id, c.id}               # selects the panels
     lock(ed, [a, c], p, "lock:u")                               # 16-bit only now
     b.lock_group = None

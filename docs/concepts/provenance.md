@@ -32,6 +32,14 @@ TIFF description, PNG text) and logged with the SHA-256 of every written
 file. Missing or modified sources refuse the export unless explicitly allowed
 (then logged).
 
+The consistency issues the user exported despite are listed under
+`consistency_warnings_overridden`, each with its `level` (*critical*,
+*major* or *minor*), `code`, `rule`, message and panel ids. This is
+`report_version` **2** of the figure sidecar; version 1 (Pycrograph 0.2.x)
+gave a `severity` (*error*, *warning*, *info*) instead of `level` and
+`rule`. The `code` values are the same in both. The source-data sidecar
+(`*.sources.provenance.json`) is still version 1.
+
 ## Integrity report
 
 *Integrity Report…* writes JSON and HTML: per image the source status and

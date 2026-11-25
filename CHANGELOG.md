@@ -30,8 +30,27 @@ All notable changes to Pycrograph are documented here. The format follows
 - Guide page *Page setup and journal presets*, with the preset table
   generated from the catalog (`scripts/make_journal_presets_table.py`).
 - `--selfcheck` validates the bundled catalog.
+- **Checks panel** (Figures tab, *Checks*): the consistency issues of the
+  figure grouped by level with counts, re-checked 500 ms after each
+  committed gesture (no saturation; **Full check** adds it); counts in the
+  status bar; click an issue to select its panels. *Check consistency* opens
+  it instead of a modal dialog.
 
 ### Changed
+- **Consistency levels**: *critical* / *major* / *minor* replace error /
+  warning / info, decided in one table (`consistency.RULES`), always shown
+  with an icon and a name. Export still refuses missing / modified sources;
+  any other critical issue needs an explicit *Export anyway despite …* tick.
+- Low effective resolution on an **inset** is *Minor* (rule
+  `resolution.inset`: "pixels shown enlarged ×1.2 … fine for an inset,
+  exported nearest-neighbour"); on an ordinary panel it stays *Major*
+  (`resolution.panel`; code `resolution` unchanged). A TIFF / PNG export
+  with smooth resampling and such an inset says, in the export dialog and
+  the sidecar warnings, that the enlarged pixels are interpolated (not
+  blocking; PDF / SVG not concerned).
+- Figure provenance sidecar `report_version` 2: overridden issues give
+  `level` and `rule` instead of `severity` (`code` values unchanged; the
+  source-data sidecar stays at 1).
 - Built-in presets always come from the catalog: `preferences.json` stores
   only the user's own presets, and a saved preset with a built-in name is
   replaced by the catalog's. The Preferences tab shows built-ins read-only
@@ -41,9 +60,20 @@ All notable changes to Pycrograph are documented here. The format follows
   and 0.25 pt minimum line (was 0.5 pt). Existing figures keep their stored
   preset; no project format change.
 - Existing figures set up with the old 8 pt Nature default now get
-  **font_size** warnings: 8 pt is above Nature's 5–7 pt text range (panel
+  **font_size** issues (Major): 8 pt is above Nature's 5–7 pt text range (panel
   letters are exempt from the maximum). Pick the size again in Page setup,
   or set the labels' size, to clear them.
+
+### Fixed
+- Consistency check false positives: rows and columns compared channels by
+  index, so a row of single-channel files of different wavelengths (`_w1`,
+  `_w2`…) reported *levels* and *channels* issues; stains are now compared
+  by name / wavelength. One stain from different lock groups in a row or
+  column is one Minor issue per row / column; a scale bar on one panel of a
+  same-scale row (µm per page-mm within 1 %) is Minor, "fine if stated in
+  the legend"; levels a lock group holds clamped per bit depth are reported
+  under *bit_depth*, not as *levels*; insets that follow their parent's
+  rendering no longer repeat the parent's issue.
 
 ## [0.2.1] - 2026-11-23
 

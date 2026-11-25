@@ -201,8 +201,8 @@ def test_sidecar_contents_and_log(env, workspace):
     p, fig, renderer, (one, two, zs), (pa, pb, pc, inset), out = env
     n = len(p.operation_log)
     res = export_figure(workspace, p, fig, renderer, out / "fig.png", ExportSettings("png"),
-                        overridden=[{"severity": "warning", "code": "tz", "message": "row 1: x",
-                                     "panel_ids": [pa.id]}])
+                        overridden=[{"level": "major", "code": "tz", "rule": "tz",
+                                     "message": "row 1: x", "panel_ids": [pa.id]}])
     side = json.loads(res.sidecar.read_text())
     assert res.sidecar.name == "fig.png.provenance.json"
     assert side["report_type"] == "pycrograph.figure_export" and side["log_chain"]["status"] == "ok"
@@ -225,6 +225,8 @@ def test_sidecar_contents_and_log(env, workspace):
     assert i["inset"]["parent_id"] == pa.id and i["inset"]["rectangle_raw_px"]["width"] == 20
     assert i["inset"]["rectangle_on_parent_mm"]["width"] > 0
     assert side["consistency_warnings_overridden"][0]["code"] == "tz"
+    assert side["consistency_warnings_overridden"][0]["level"] == "major"
+    assert side["report_version"] == 2                          # level instead of severity
     [e] = p.operation_log[n:]
     assert e.operation == "export.figure" and e.target_id == fig.id
     assert e.new_value["files"][0]["sha256"] == sha256_file(res.files[0])
@@ -357,3 +359,28 @@ def test_inset_of_parent_with_scale_bar_exports_no_bar(env, workspace):
     inset.scale_bar.visible = True
     res = export_figure(workspace, p, fig, renderer, out / "bars2.svg", ExportSettings("svg"))
     assert _svg_texts(res.files[0].read_text()).count(text) == 2
+
+
+# ------------------------------------------------------------ smooth resampling and insets
+@pytest.mark.parametrize("fmt,resampling,warned", [("png", "smooth", True), ("tiff", "smooth", True),
+                                                   ("png", "nearest", False),
+                                                   ("pdf", "smooth", False), ("svg", "smooth", False)])
+def test_smooth_resampling_warns_for_low_res_insets(env, workspace, fmt, resampling, warned):
+    from pycrograph.consistency import SMOOTH_INSET_WARNING, effective_ppi, insets_below_dpi
+    p, fig, renderer, (one, two, zs), (pa, pb, pc, inset), out = env
+    assert effective_ppi(inset, one) < fig.page.preset.dpi and insets_below_dpi(p, fig) == [inset]
+    res = export_figure(workspace, p, fig, renderer, out / f"f.{fmt}",
+                        ExportSettings(fmt, resampling=resampling))
+    side = json.loads(res.sidecar.read_text())
+    assert (SMOOTH_INSET_WARNING in res.warnings) is warned
+    assert (SMOOTH_INSET_WARNING in side["warnings"]) is warned
+    assert (SMOOTH_INSET_WARNING in (p.operation_log[-1].note or "")) is warned
+    assert res.files[0].is_file()                                # never blocks
+
+
+def test_no_smooth_warning_without_low_res_inset(env, workspace):
+    from pycrograph.consistency import SMOOTH_INSET_WARNING
+    p, fig, renderer, _refs, (pa, pb, pc, inset), out = env
+    fig.panels.remove(inset)
+    res = export_figure(workspace, p, fig, renderer, out / "f.png", ExportSettings("png", resampling="smooth"))
+    assert SMOOTH_INSET_WARNING not in res.warnings

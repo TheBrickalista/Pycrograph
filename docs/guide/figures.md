@@ -81,14 +81,61 @@ guides and inset rectangles are unchanged.
   ellipses stored in image pixels.
 - **Info** — source, crop, zoom, effective resolution (flagged below the
   page dpi), pixel scale.
+- **Checks** — the figure's consistency issues, kept up to date while you
+  edit (see below).
+
+## Checks
+
+The **Checks** tab lists what may be wrong with the figure, grouped in three
+levels. Each level has its icon and its name, never only a colour:
+
+- **⛔ Critical**: the figure is wrong or incomplete as exported — a source
+  missing or modified, an image not in the project, a label value printed as
+  "?", content cut off at the page edge, two different stains on one locked
+  channel, or levels that differ inside a lock group (a broken lock).
+- **⚠ Major**: likely to mislead — the same stain shown with different levels
+  on panels of a row or column that are not locked together, a lock group
+  mixing bit depths, T / Z differing in a row, saturated pixels, resolution
+  below the page dpi on a panel, a scale bar longer than its panel (or not drawable),
+  scale bars on some panels of a row when the others are at another scale, a
+  linked inset group out of step, a source changed on disk, page or text
+  size outside the journal preset.
+- **ℹ Minor**: worth a look or a word in the legend — thin lines, one scale
+  bar for a row of panels at the same scale (fine if the legend says so), an
+  inset below the page dpi (see below),
+  one stain from different lock groups in a row or column (intended?),
+  gamma ≠ 1, a light-archive extract, a SHA-256 not recorded yet.
+
+Rows and columns compare each **stain** with itself (channel name and
+wavelength): a row of single-channel files of different wavelengths (`_w1`,
+`_w2`…) is never compared across stains. An inset that follows its parent's
+rendering is compared through its parent, so its parent's issue is not
+reported twice.
+
+**Why a low-resolution inset is only Minor.** An inset exists to show a
+region enlarged, so its pixels are often fewer than the page dpi asks for
+(for example 250 ppi on a 300 dpi page: enlarged ×1.2). Exported with
+nearest-neighbour resampling (the default), each image pixel becomes a block
+of output pixels: the file still has the journal's dpi and no value is
+invented. On an ordinary panel the same thing means the image is printed
+larger than its data supports, so it stays **Major**. With *Smooth*
+resampling in a TIFF / PNG export, the enlarged inset pixels are
+interpolated (values not in the raw data): the export dialog and the
+provenance sidecar say so. PDF and SVG embed every panel at its native
+resolution and are not concerned.
+
+The check runs half a second after each change (*Check while editing*; the
+status bar shows the counts). Saturated pixels need to read every crop:
+**Full check** (or *Check consistency* in the toolbar) adds them. Click an
+issue to select its panels.
 
 ## Export
 
-**Export…** first runs the consistency check (levels differing within a row,
-column or lock group; T/Z differing in a row; scale bars on some panels only;
-channel name mismatches; sources missing or modified; low resolution; thin
-lines; saturated pixels; content past the page edge; unresolved labels).
-"Export anyway" records the warnings. PDF and SVG keep text as text and embed
+**Export…** first runs the full check. Missing or modified sources refuse
+the export. Any other critical issue needs the *Export anyway despite …
+critical issues* tick; major and minor issues only need **Export anyway**.
+The issues exported despite are recorded in the log and the provenance
+sidecar, with their level. PDF and SVG keep text as text and embed
 each panel's pixels at native resolution (PDF lossless); TIFF / PNG are
 rendered at a chosen dpi with nearest-neighbour (default) or smooth
 resampling. See {doc}`../concepts/provenance`.

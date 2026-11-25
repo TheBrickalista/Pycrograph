@@ -42,7 +42,14 @@ from .scalebar import ScaleBarUnavailable, bar_geometry
 
 SIDECAR_TYPE = "pycrograph.figure_export"
 SOURCES_TYPE = "pycrograph.source_export"
-SIDECAR_VERSION = 1
+# Figure sidecar (`report_version`):
+#   1  consistency_warnings_overridden: [{severity: error|warning|info, code,
+#      message, panel_ids}]
+#   2  ... [{level: critical|major|minor, code, rule, message, panel_ids}]
+#      (consistency.RULES; `code` values unchanged)
+SIDECAR_VERSION = 2
+# Source-data sidecar (*.sources.provenance.json): unchanged, still 1.
+SOURCES_SIDECAR_VERSION = 1
 
 
 def sidecar_name(name: str, sources: bool = False) -> str:
