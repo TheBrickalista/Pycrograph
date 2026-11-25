@@ -81,8 +81,10 @@ def test_labels_add_layout_follow_and_log(app, setup):
     a, b = rects["top-left"]
     assert a.left() == pytest.approx(INSIDE_MARGIN_MM) and a.top() == pytest.approx(INSIDE_MARGIN_MM)
     assert b.top() >= a.bottom()
-    # Font size from the page preset: 8 pt.
-    assert labels[3].scale() * labels[3].font().pixelSize() == pytest.approx(8 * PT_MM)
+    # Font size from the page preset (catalog: Nature double column, 7 pt).
+    size = tab.current_figure().page.preset.font_size_pt
+    assert size == 7.0
+    assert labels[3].scale() * labels[3].font().pixelSize() == pytest.approx(size * PT_MM)
 
     # Unresolved token: "?" + reported in the status bar and the Labels tab.
     assert "[time]" in tab.missing_tokens([pa.id])                        # single-plane TIFF

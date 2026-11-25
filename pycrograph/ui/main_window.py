@@ -154,6 +154,11 @@ class MainWindow(QMainWindow):
                                       before_gesture=self.flush_pending, prefs=self.prefs,
                                       save_prefs=self.save_prefs, workspace=self.ws)
         self.figures_tab.status_message.connect(lambda m: self.statusBar().showMessage(m, 4000))
+        # Level counts of the live consistency check (permanent, right side).
+        self.checks_label = QLabel("")
+        self.checks_label.setToolTip("Consistency of the current figure (Figures › Checks)")
+        self.statusBar().addPermanentWidget(self.checks_label)
+        self.figures_tab.checks_changed.connect(self.checks_label.setText)
         self.figures_tab.image_defaults_changed.connect(self._on_image_defaults_changed)
         # The Add Images picker shows the Library's thumbnails / statuses and
         # imports through the one import flow below.

@@ -47,16 +47,19 @@ from ..ui_text import noun, plural
 from .figure_canvas import FigureCanvas, PanelItem, PanelVisual
 from .insets_inspector import InsetsInspector
 from .labels_inspector import LabelsInspector
+from .checks_panel import ChecksPanel, counts_text
 from .page_setup import PageSetupDialog
 from .panel_inspector import PreviewInspector
 from .scene_builder import overlay_builder, panel_visual
 
 CANVAS_MAX_SIDE = 1024      # on-screen decimation (integer stride, no interpolation)
 IDLE_COMMIT_MS = 700        # same as the library / PysternBlot gesture commit
+LIVE_CHECK_MS = 500         # live consistency check, after the last committed gesture
 
 
 class FiguresTab(QWidget):
     status_message = Signal(str)
+    checks_changed = Signal(str)                  # level counts, for the status bar
     image_defaults_changed = Signal(str)          # image id
 
     def __init__(self, renderer: PanelRenderer, save: Callable[[], None],
@@ -69,7 +72,8 @@ class FiguresTab(QWidget):
         self.workspace = workspace
         self.prefs = prefs or Preferences()
         self._save_prefs = save_prefs or (lambda: None)
-        self._save = save
+        self._save_project = save
+        self._save = self._save_and_check            # every committed gesture saves
         self._before_gesture = before_gesture or (lambda: None)
         self.project: Optional[Project] = None
         self._editors: dict[str, FigureEditor] = {}
@@ -84,6 +88,11 @@ class FiguresTab(QWidget):
         self._idle.setSingleShot(True)
         self._idle.setInterval(IDLE_COMMIT_MS)
         self._idle.timeout.connect(self.end_live)
+        self._check_timer = QTimer(self)
+        self._check_timer.setSingleShot(True)
+        self._check_timer.setInterval(LIVE_CHECK_MS)
+        self._check_timer.timeout.connect(self._live_check)
+        self.last_issues: list[C.Issue] = []
         self._build()
         self._update_enabled()
 
@@ -141,8 +150,9 @@ class FiguresTab(QWidget):
         bar.addWidget(self._build_outlines_button())
         bar.addSpacing(12)
         self.a_check = action("Check consistency", lambda: self.check_consistency(show=True),
-                              tip="Levels, T/Z, scale bars, channels, sources, resolution, line "
-                                  "widths, saturation — per row, column and lock group")
+                              tip="Full check in the Checks panel: levels, T/Z, scale bars, "
+                                  "channels, sources, resolution, line widths, saturation — per "
+                                  "row, column and lock group")
         self.a_export = action("Export…", self.export_figure_dialog,
                                tip="PDF / SVG / TIFF / PNG with a provenance file")
         self.a_export_sources = action("Export source data…", self.export_sources_dialog,
@@ -190,6 +200,10 @@ class FiguresTab(QWidget):
         self.insets_inspector = InsetsInspector(self)
         self.inspector_tabs.addTab(self.insets_inspector, "Insets && Shapes")
         self.inspector_tabs.addTab(self.info, "Info")
+        self.checks = ChecksPanel(self.canvas.select_ids)
+        self.checks.full_check_requested.connect(lambda: self.run_checks(full=True))
+        self.checks.live_toggled.connect(lambda on: on and self.schedule_check())
+        self.inspector_tabs.addTab(self.checks, "Checks")
         self.inspector_tabs.setMinimumWidth(400)
         split.addWidget(self.inspector_tabs)
         split.setStretchFactor(0, 1)
@@ -1233,25 +1247,61 @@ class FiguresTab(QWidget):
         return out
 
     # ========================================================= check / export
-    def check_consistency(self, show: bool = False, saturation: bool = True) -> list[C.Issue]:
-        """Run the §2.9 check on the current figure (sources checked by
-        size/date; saturation on each panel's crop)."""
+    # ========================================================== checks
+    def _save_and_check(self) -> None:
+        self._save_project()
+        self.schedule_check()
+
+    def schedule_check(self) -> None:
+        """Live mode: re-check LIVE_CHECK_MS after the last committed gesture."""
+        if self.checks.live_cb.isChecked():
+            self._check_timer.start()
+
+    def _live_check(self) -> None:
+        if any(ed.has_pending for ed in self._editors.values()):
+            self._check_timer.start()               # a gesture is still open: wait for it
+            return
+        self.run_checks(full=False)
+
+    def _compute_issues(self, saturation: bool) -> list[C.Issue]:
         fig = self.current_figure()
         if fig is None or self.project is None:
             return []
-        self.flush()
         ws, project = self.workspace, self.project
 
         def status(ref) -> str:
             return check_image(ws, project, ref).value if ws is not None else (
                 "pending_hash" if ref.sha256 is None else "ok")
-        issues = C.check_figure(project, fig, source_status=status,
-                                crop_plane=(lambda p, r, c: self.renderer.crop_plane(r, p, c))
-                                if saturation else None)
+        return C.check_figure(project, fig, source_status=status,
+                              crop_plane=(lambda p, r, c: self.renderer.crop_plane(r, p, c))
+                              if saturation else None)
+
+    def run_checks(self, full: bool = False) -> list[C.Issue]:
+        """Check the current figure (sources by size/date; `full` adds
+        saturation on each crop) and show the result in the Checks panel,
+        on its tab and in the status bar."""
+        if full:
+            self.flush()
+        self._check_timer.stop()
+        issues = self._compute_issues(saturation=full)
+        self.last_issues = issues
+        self.checks.show_issues(issues, full=full)
+        n = C.counts(issues)
+        marks = " ".join(f"{C.LEVEL_ICON[lv]}{k}" for lv, k in n.items() if k)
+        i = self.inspector_tabs.indexOf(self.checks)
+        self.inspector_tabs.setTabText(i, f"Checks {marks}" if marks else "Checks ✓")
+        self.inspector_tabs.setTabToolTip(i, f"Consistency: {C.summary(issues)}")
+        self.checks_changed.emit(("Checks: " + counts_text(issues)) if self.current_figure()
+                                 else "")
+        return issues
+
+    def check_consistency(self, show: bool = False, saturation: bool = True) -> list[C.Issue]:
+        """Run the §2.9 check on the current figure (full by default) and,
+        with `show`, bring the Checks panel to the front (non-modal)."""
+        issues = self.run_checks(full=saturation)
         self.status_message.emit(f"Consistency: {C.summary(issues)}")
         if show:
-            from .export_dialogs import ConsistencyDialog
-            ConsistencyDialog(issues, self.canvas.select_ids, "check", self).exec()
+            self.inspector_tabs.setCurrentWidget(self.checks)
         return issues
 
     def export_figure(self, path, settings: "X.ExportSettings",
@@ -1293,7 +1343,8 @@ class FiguresTab(QWidget):
             return
         from PySide6.QtWidgets import QFileDialog
         from .export_dialogs import ExportDialog
-        dlg = ExportDialog(fig.page.preset.dpi, fig.page.n_pages, self)
+        dlg = ExportDialog(fig.page.preset.dpi, fig.page.n_pages, self,
+                           low_res_insets=len(C.insets_below_dpi(self.project, fig)))
         if dlg.exec() != QDialog.Accepted:
             return
         settings = dlg.settings()
@@ -1509,6 +1560,7 @@ class FiguresTab(QWidget):
         self._report_missing()
         self._update_info()
         self._update_enabled()
+        self.schedule_check()
 
     def _on_selection_changed(self, ids: list) -> None:
         self.flush()                      # a gesture never spans two selections

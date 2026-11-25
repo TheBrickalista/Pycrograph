@@ -16,6 +16,9 @@ untouched, local only, provenance).
 2. **Figure editor — done (0.2.0, first public beta), items 3–8 below:** canvas, layout tools, labels and
    scale bars, insets and shapes, consistency check, provenance-tracked export,
    `.pcarchive` archives.
+   **Betas since:** T vs Z inference for multi-page TIFF (0.2.1); journal
+   page presets from a sourced catalog, and the consistency check in three
+   levels, live while editing (0.2.2).
 3. **Canvas & panels:** page at journal width (presets as data: Nature 89 /
    183 mm, ≤ 170 mm high, ≥ 300 dpi, Arial ~8 pt), panels on a grid
    (rows = conditions, columns = channels), copy/paste display settings,

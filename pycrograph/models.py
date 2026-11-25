@@ -334,9 +334,24 @@ class PagePreset(BaseModel):
     min_line_pt: float = 0.5
 
 
+# A preset at least this much wider than tall is a landscape page (slides:
+# 4:3 = 1.33 and wider; Letter 1.29, A4 1.41). Journal presets stay below
+# (the widest, Nature double column, is 183 / 170 = 1.08).
+LANDSCAPE_ASPECT = 1.25
+
+
 class PageSetup(BaseModel):
     """Paper of a figure: a journal preset plus the actual page size.
-    width_mm / height_mm are the portrait size; landscape swaps them."""
+    width_mm / height_mm are the portrait size; landscape swaps them.
+
+    A preset gives the size as laid out (width × maximum height). A clearly
+    landscape page — at least LANDSCAPE_ASPECT (1.25) times wider than tall:
+    every slide (4:3 and wider), landscape paper — opens in landscape with
+    its short side as the portrait width, so switching orientation turns
+    the same paper (`preset_layout`). A journal preset is a column width
+    with a maximum height, portrait by convention even when slightly wider
+    than tall (Nature double column, 183 × 170 mm): it opens in portrait,
+    as before."""
     preset: PagePreset = Field(default_factory=PagePreset)
     width_mm: float = Field(183.0, gt=0)
     height_mm: float = Field(170.0, gt=0)
@@ -346,9 +361,20 @@ class PageSetup(BaseModel):
     grid_mm: float = Field(1.0, gt=0)
     snap: bool = True
 
+    @staticmethod
+    def preset_layout(preset: PagePreset) -> tuple[float, float, str]:
+        """(portrait width, portrait height, orientation) that lay the
+        preset's page out at its own width × maximum height."""
+        w, h = preset.width_mm, preset.max_height_mm
+        return (h, w, "landscape") if w >= LANDSCAPE_ASPECT * h else (w, h, "portrait")
+
     @classmethod
     def from_preset(cls, preset: PagePreset, **kw: Any) -> "PageSetup":
-        return cls(preset=preset, width_mm=preset.width_mm, height_mm=preset.max_height_mm, **kw)
+        """A page at the preset's size; `orientation` in `kw` overrides the
+        preset's own (then the same paper, turned)."""
+        w, h, orientation = cls.preset_layout(preset)
+        kw.setdefault("orientation", orientation)
+        return cls(preset=preset, width_mm=w, height_mm=h, **kw)
 
     @property
     def size_mm(self) -> tuple[float, float]:

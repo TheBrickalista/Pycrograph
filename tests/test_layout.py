@@ -5,6 +5,8 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from pycrograph import layout as L
@@ -235,15 +237,17 @@ def test_page_setup_logged_and_guarded(env, workspace):
 # ------------------------------------------------------------ preferences
 def test_preferences_round_trip(tmp_path):
     prefs = load_preferences(tmp_path)                        # missing -> defaults
-    assert [p.name for p in prefs.presets] == ["Nature single column", "Nature double column"]
-    d = prefs.default()
-    assert (d.width_mm, d.max_height_mm, d.dpi, d.font_family, d.font_size_pt) == \
-        (183.0, 170.0, 300, "Arial", 8.0)
+    assert [p.name for p in prefs.presets] == [p.name for p in builtin_presets()]
+    d = prefs.default()                                       # from the catalog
+    assert (d.name, d.width_mm, d.max_height_mm, d.dpi, d.font_family) == \
+        ("Nature double column", 183.0, 170.0, 300, "Arial")
     assert prefs.preset("Nature single column").width_mm == 89.0
     prefs.presets.append(prefs.presets[0].model_copy(update={"name": "Cell 1 col", "width_mm": 85}))
     prefs.default_preset = "Cell 1 col"
     prefs.layout_gap_mm = 3.5
     save_preferences(tmp_path, prefs)
+    saved = json.loads(preferences_path(tmp_path).read_text())
+    assert [p["name"] for p in saved["presets"]] == ["Cell 1 col"]   # built-ins: never saved
     again = load_preferences(tmp_path)
     assert again == prefs and again.new_page().width_mm == 85
     preferences_path(tmp_path).write_text("{not json")

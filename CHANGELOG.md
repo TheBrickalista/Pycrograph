@@ -6,6 +6,99 @@ All notable changes to Pycrograph are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-11-25
+
+Third beta. Page setup draws on a sourced catalog of journal page presets
+(57 presets from 20 publishers, slide sizes included): pick the publisher,
+then the size, and see where each value comes from; page and text size are
+checked against the journal. The consistency check is reworked: rows and
+columns compare each stain with itself (no more false alarms on
+one-file-per-wavelength figures), issues come in three levels (critical,
+major, minor), and they are kept up to date in a live Checks panel. Export
+asks for an explicit tick when a critical issue remains.
+
+### Compatibility
+- Project format unchanged: 5, as in 0.2.1 (0.2.0 cannot open it).
+- Figure provenance sidecar `report_version` 2: overridden issues give
+  `level` and `rule` instead of `severity`; `code` values are unchanged.
+  Sidecars and log entries written by 0.2.x stay valid: the integrity report
+  still verifies those exports by their SHA-256 and counts their issues.
+- Figures made with the old 8 pt Nature default now get **font_size**
+  issues (8 pt is above Nature's 5–7 pt text range). To clear them, pick
+  the size again in *Page setup* (the figure then takes the catalog's
+  values) or set the labels' font size.
+- New figures default to the catalog's *Nature double column*: 7 pt text
+  and 0.25 pt minimum lines (was 8 pt and 0.5 pt).
+
+### Added
+- **Journal page presets catalog** (`resources/journal_presets.json`, 57
+  presets from 20 publishers, validated at load). It is the source of the
+  built-in presets; publisher, status (official / secondary / mixed), fields
+  the journal does not state, font range, journals, source and note stay in
+  the catalog (`journal_presets.JournalPreset`), looked up by preset name.
+- **Page setup**: choose **Publisher ▾** then **Size ▾** (e.g. *single column
+  — 89 mm*), or **Custom** (your presets, or a free page size). The dialog
+  shows the preset's sizes, dpi, font, minimum line, journals, note, source
+  link and a status badge (*Official*, *Secondary — verify*, *Mixed*);
+  values the journal does not state are greyed as defaults.
+- Consistency check: **page_size** (page wider than the preset width or
+  taller than its maximum height) and **font_size** (label or scale-bar text
+  outside the journal's range, when given; one-letter panel letters are
+  checked against the minimum only). Warnings say when the limit is a default
+  rather than a journal rule.
+- **Presentation slides** presets (PowerPoint widescreen 16:9 and standard
+  4:3, Google Slides 16:9, 16:10): they open as wide pages, in landscape
+  (`PageSetup.preset_layout`: a preset at least 1.25 times wider than tall);
+  the orientation toggle turns the same paper. Journal presets still open
+  in portrait.
+- Guide page *Page setup and journal presets*, with the preset table
+  generated from the catalog (`scripts/make_journal_presets_table.py`).
+- `--selfcheck` validates the bundled catalog.
+- **Checks panel** (Figures tab, *Checks*): the consistency issues of the
+  figure grouped by level with counts, re-checked 500 ms after each
+  committed gesture (no saturation; **Full check** adds it); counts in the
+  status bar; click an issue to select its panels. *Check consistency* opens
+  it instead of a modal dialog.
+
+### Changed
+- **Consistency levels**: *critical* / *major* / *minor* replace error /
+  warning / info, decided in one table (`consistency.RULES`), always shown
+  with an icon and a name. Export still refuses missing / modified sources;
+  any other critical issue needs an explicit *Export anyway despite …* tick.
+- Low effective resolution on an **inset** is *Minor* (rule
+  `resolution.inset`: "pixels shown enlarged ×1.2 … fine for an inset,
+  exported nearest-neighbour"); on an ordinary panel it stays *Major*
+  (`resolution.panel`; code `resolution` unchanged). A TIFF / PNG export
+  with smooth resampling and such an inset says, in the export dialog and
+  the sidecar warnings, that the enlarged pixels are interpolated (not
+  blocking; PDF / SVG not concerned).
+- Figure provenance sidecar `report_version` 2: overridden issues give
+  `level` and `rule` instead of `severity` (`code` values unchanged; the
+  source-data sidecar stays at 1).
+- Built-in presets always come from the catalog: `preferences.json` stores
+  only the user's own presets, and a saved preset with a built-in name is
+  replaced by the catalog's. The Preferences tab shows built-ins read-only
+  (Duplicate to adapt one; *Restore built-in presets* is gone) and chooses
+  the default preset by publisher, then size.
+- New figures get the catalog's *Nature double column*: 7 pt text (was 8 pt)
+  and 0.25 pt minimum line (was 0.5 pt). Existing figures keep their stored
+  preset; no project format change.
+- Existing figures set up with the old 8 pt Nature default now get
+  **font_size** issues (Major): 8 pt is above Nature's 5–7 pt text range (panel
+  letters are exempt from the maximum). Pick the size again in Page setup,
+  or set the labels' size, to clear them.
+
+### Fixed
+- Consistency check false positives: rows and columns compared channels by
+  index, so a row of single-channel files of different wavelengths (`_w1`,
+  `_w2`…) reported *levels* and *channels* issues; stains are now compared
+  by name / wavelength. One stain from different lock groups in a row or
+  column is one Minor issue per row / column; a scale bar on one panel of a
+  same-scale row (µm per page-mm within 1 %) is Minor, "fine if stated in
+  the legend"; levels a lock group holds clamped per bit depth are reported
+  under *bit_depth*, not as *levels*; insets that follow their parent's
+  rendering no longer repeat the parent's issue.
+
 ## [0.2.1] - 2026-11-23
 
 Second beta. A TIFF whose planes lie along one generic axis is now read as a

@@ -404,9 +404,9 @@ def test_extract_provenance_everywhere(workspace, env, tmp_path):
     assert "light_extract" in im["flags"] and rep["summary"]["n_light_extracts"] == 3
     html = write_integrity_html(rep, out / "x.html").read_text()
     assert "original raw file NOT present" in html and "recorded, not verified" in html
-    # Consistency: one info item per panel.
+    # Consistency: one minor item per panel.
     issues = [i for i in C.check_figure(q, fig) if i.code == "light_extract"]
-    assert len(issues) == len(fig.panels) and {i.severity for i in issues} == {"info"}
+    assert len(issues) == len(fig.panels) and {i.level for i in issues} == {"minor"}
     assert "not the original raw file" in issues[0].message
 
 

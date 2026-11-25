@@ -195,17 +195,24 @@ group's settings too.
 
 ## 6. Integrity: the check and the sidecar
 
-**Check consistency** (and **Export…**, which runs it first) looks at every
-row, every column and every lock group of the figure:
+The **Checks** tab (and **Export…**, which runs the check first) looks at
+every row, every column and every lock group of the figure. Rows and columns
+compare each stain with itself (channel name / wavelength); lock groups
+compare channels by number, as locks do:
 
-- **levels**: the same visible channel shown with different black, white,
-  gamma, LUT or invert in one row, column or group. Inside a lock group this
-  can't happen through editing, so the warning usually means a row or column
-  you meant to compare isn't locked. Lock it.
-- **channels**: the same channel number is a different stain in one row,
-  column or group (case (c)).
-- **bit_depth**: a lock group mixes images of different bit depths
-  (case (b)).
+- **levels**, *Major*: the same stain shown with different black, white,
+  gamma, LUT or invert in a row or column, on panels not locked together.
+  Usually a row or column you meant to compare isn't locked. Lock it.
+- **lock groups**, *Minor*: a row or column shows one stain from different
+  lock groups with different settings. Reported once per row or column:
+  fine if intended (two experiments), otherwise lock them together.
+- **levels**, *Critical*: levels differ inside a lock group. Editing can't do
+  that, so the lock is broken (a file edited by hand, an old project).
+- **channels**, *Critical*: the same channel number is a different stain in
+  one lock group (case (c)).
+- **bit_depth**, *Major*: a lock group mixes images of different bit depths
+  (case (b)). Levels each image holds clamped to its own range are said
+  here, not reported as a broken lock.
 
 A lock group is named by its kind and its panels, never by an internal code:
 

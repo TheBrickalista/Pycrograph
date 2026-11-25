@@ -50,17 +50,27 @@ def test_rows_columns_groups():
 
 def test_levels_in_row_only_visible_channels(env):
     p, fig, ed, (one, two, zs) = env
-    a, b = ed.add_images([one, zs])                       # one row
+    a, b = ed.add_images([one, one])                      # one row, same stain (TxRed)
     for q in (a, b):
         panel_channel(q, 0).lut, panel_channel(q, 0).black, panel_channel(q, 0).white = "grey", 100, 9000
     assert not codes(run(p, fig), "levels")
     panel_channel(b, 0).white = 8000
     panel_channel(b, 0).lut = "green"
     [i] = codes(run(p, fig), "levels")
-    assert i.severity == "warning" and set(i.panel_ids) == {a.id, b.id}
-    assert "row 1" in i.message and "white 9000 / 8000" in i.message and "lut grey / green" in i.message
+    assert (i.level, i.rule) == ("major", "levels.row") and set(i.panel_ids) == {a.id, b.id}
+    assert "row 1: 5 TxRed (630 nm) shown with different" in i.message
+    assert "white 9000 / 8000" in i.message and "lut grey / green" in i.message
     panel_channel(b, 0).visible = False                   # hidden: not compared
     assert not codes(run(p, fig), "levels")
+
+
+def test_row_of_different_stains_never_compared(env):
+    """TxRed (Nuc_ER_ER.tif) and GFP (zstack.stk) share channel index 0."""
+    p, fig, ed, (one, two, zs) = env
+    a, b = ed.add_images([one, zs])
+    panel_channel(a, 0).white, panel_channel(b, 0).white = 9000, 3000
+    issues = run(p, fig)
+    assert not codes(issues, "levels") and not codes(issues, "channels")
 
 
 def test_tz_in_row_and_montage_exempt(env):
@@ -128,7 +138,7 @@ def test_per_panel_rules(env):
     assert not codes(issues, "nonlinear") and not codes(issues, "line_width")
     panel_channel(a, 0).gamma = 1.4
     [i] = codes(run(p, fig), "nonlinear")
-    assert i.severity == "info"
+    assert i.level == "minor" and "disclose in the legend" in i.message
     # 64 px across 40 mm = 41 ppi < 300 dpi
     [i] = codes(run(p, fig), "resolution")
     assert "41 ppi < 300 dpi" in i.message
@@ -155,30 +165,33 @@ def test_saturation_in_crop(env):
     assert not codes(run(p, fig), "saturation")            # no pixels given: rule skipped
 
 
-@pytest.mark.parametrize("status,severity", [("missing", "error"), ("modified", "error"),
-                                             ("changed", "warning"), ("pending_hash", "warning"),
-                                             ("ok", None)])
-def test_sources(env, status, severity):
+@pytest.mark.parametrize("status,level", [("missing", "critical"), ("modified", "critical"),
+                                          ("changed", "major"), ("pending_hash", "minor"),
+                                          ("ok", None)])
+def test_sources(env, status, level):
     p, fig, ed, (one, two, zs) = env
     ed.add_images([one, one])
     found = codes(run(p, fig, source_status=lambda r: status), "source")
-    if severity is None:
+    if level is None:
         assert not found
     else:
         [i] = found                                        # once per image, both panels
-        assert i.severity == severity and len(i.panel_ids) == 2
+        assert i.level == level and i.rule == f"source.{status}" and len(i.panel_ids) == 2
 
 
 def test_sorted_and_deduplicated(env):
     p, fig, ed, (one, two, zs) = env
-    a, b = ed.add_images([one, zs])
+    a, b = ed.add_images([one, one])
     a.lock_group = b.lock_group = "lock:y"                 # same row AND lock group
     panel_channel(b, 0).white = 1234
-    issues = run(p, fig, source_status=lambda r: "missing" if r is zs else "ok")
-    assert issues[0].severity == "error"
-    assert len(codes(issues, "levels")) == 1               # row + lock group: reported once
-    assert C.summary(issues).startswith("1 error, ")
-    assert issues[0].to_dict()["panel_ids"] == [b.id]
+    issues = run(p, fig, source_status=lambda r: "modified")
+    assert [i.level for i in issues] == sorted((i.level for i in issues), key=C.LEVEL_ORDER.get)
+    [lv] = codes(issues, "levels")                         # row + lock group: reported once
+    assert (lv.level, lv.rule) == ("critical", "levels.lock") and "lock broken" in lv.message
+    assert C.summary(issues).startswith("2 critical")
+    d = codes(issues, "source")[0].to_dict()
+    assert set(d) == {"level", "code", "rule", "message", "panel_ids"} and d["level"] == "critical"
+    assert d["panel_ids"] == [a.id, b.id]
 
 
 def test_off_page_scalebar_fit_and_labels(env):
