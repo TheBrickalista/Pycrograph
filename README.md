@@ -22,7 +22,7 @@ Pycrograph is the imaging sister of [PysternBlot](https://github.com/TheBrickali
 (Western blot figures). It keeps what OMERO.figure does well — figures re-rendered
 from raw data with recorded display settings — without a server.
 
-> **Status: beta (0.2.1).** 0.x releases are betas: GitHub pre-releases,
+> **Status: beta (0.2.2).** 0.x releases are betas: GitHub pre-releases,
 > each archived on Zenodo with a DOI. 1.0.0 will be the first stable
 > release, also published on PyPI.
 > Library, TIFF-family readers (plain, ImageJ, MetaMorph TIFF/STK), the
@@ -56,6 +56,12 @@ from raw data with recorded display settings — without a server.
 - Per channel: on/off, LUT (named or custom colour), histogram with draggable
   gates, Black/White typed or dragged, gamma, invert, saturation badge,
   free-text stain/antibody. T/Z navigation, 90° rotation, flips.
+- Page setup from a sourced catalog of journal presets (57 presets, 20
+  publishers, slide sizes): publisher, then size; each preset shows its
+  source and whether the journal states each value.
+- Consistency check in three levels (critical / major / minor), live while
+  editing: stains compared across rows and columns, lock groups, scale bars,
+  resolution, page and font size against the journal preset, sources.
 - Integrity report (JSON).
 
 ## Install

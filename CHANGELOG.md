@@ -6,6 +6,30 @@ All notable changes to Pycrograph are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-11-25
+
+Third beta. Page setup draws on a sourced catalog of journal page presets
+(57 presets from 20 publishers, slide sizes included): pick the publisher,
+then the size, and see where each value comes from; page and text size are
+checked against the journal. The consistency check is reworked: rows and
+columns compare each stain with itself (no more false alarms on
+one-file-per-wavelength figures), issues come in three levels (critical,
+major, minor), and they are kept up to date in a live Checks panel. Export
+asks for an explicit tick when a critical issue remains.
+
+### Compatibility
+- Project format unchanged: 5, as in 0.2.1 (0.2.0 cannot open it).
+- Figure provenance sidecar `report_version` 2: overridden issues give
+  `level` and `rule` instead of `severity`; `code` values are unchanged.
+  Sidecars and log entries written by 0.2.x stay valid: the integrity report
+  still verifies those exports by their SHA-256 and counts their issues.
+- Figures made with the old 8 pt Nature default now get **font_size**
+  issues (8 pt is above Nature's 5–7 pt text range). To clear them, pick
+  the size again in *Page setup* (the figure then takes the catalog's
+  values) or set the labels' font size.
+- New figures default to the catalog's *Nature double column*: 7 pt text
+  and 0.25 pt minimum lines (was 8 pt and 0.5 pt).
+
 ### Added
 - **Journal page presets catalog** (`resources/journal_presets.json`, 57
   presets from 20 publishers, validated at load). It is the source of the

@@ -13,8 +13,8 @@ authors:
     affiliation: "Université Côte d'Azur, CNRS, Inserm, IRCAN, Nice, France"
 repository-code: "https://github.com/TheBrickalista/Pycrograph"
 license: GPL-3.0-only
-version: 0.2.1
-date-released: "2026-11-23"
+version: 0.2.2
+date-released: "2026-11-25"
 doi: 10.5281/zenodo.24404763
 abstract: >
   Pycrograph is a GPLv3 Python desktop application for building
