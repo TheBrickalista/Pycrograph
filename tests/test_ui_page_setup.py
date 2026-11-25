@@ -5,6 +5,9 @@
 
 from __future__ import annotations
 
+from html.parser import HTMLParser
+from urllib.parse import urlparse
+
 import pytest
 
 pytest.importorskip("PySide6.QtWidgets")
@@ -17,6 +20,21 @@ from pycrograph.ui.page_setup import CUSTOM_KEY, FIGURE_KEY, PageSetupDialog  # 
 from pycrograph.ui.preset_picker import CUSTOM  # noqa: E402
 
 CELL = "Cell Press 2-column journals: 1 column (85 mm)"
+
+
+def link_hrefs(html_text: str) -> list[str]:
+    """The href of every <a> in a rich-text string (html.parser)."""
+    class Links(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.hrefs: list[str] = []
+
+        def handle_starttag(self, tag, attrs):
+            if tag == "a":
+                self.hrefs += [v for k, v in attrs if k == "href" and v]
+    parser = Links()
+    parser.feed(html_text)
+    return parser.hrefs
 
 
 def items(combo):
@@ -40,7 +58,10 @@ def test_two_level_choice(dialog):
     assert pubs == load_catalog().publishers() + [CUSTOM]
     assert pk.publisher() == "Nature Portfolio" and pk.current_key() == "Nature double column"
     assert ("single column — 89 mm", "Nature single column") in items(pk.size_combo)
-    assert "Official" in dlg.info.text() and "research-figure-guide.nature.com" in dlg.info.text()
+    assert "Official" in dlg.info.text()
+    [source] = link_hrefs(dlg.info.text())                    # the preset's source link
+    parsed = urlparse(source)
+    assert parsed.scheme == "https" and parsed.hostname == "research-figure-guide.nature.com"
     assert "Nature Communications" in pk.publisher_combo.itemData(0, 3)   # tooltip: journals
 
     pk.choose("Cell Press")                                   # publisher: its first size
@@ -54,6 +75,7 @@ def test_two_level_choice(dialog):
     assert (out.preset.name, out.width_mm, out.height_mm) == ("PNAS: 2 columns (178 mm)", 178.0, 225.0)
     assert "journal range 6–12 pt" in dlg.info.text()
     assert "PNAS Digital Art Guidelines" in dlg.info.text()   # not a URL: plain text
+    assert link_hrefs(dlg.info.text()) == []                  # ... and not made a link
 
 
 def test_custom_page(dialog):
