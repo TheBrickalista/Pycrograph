@@ -35,6 +35,7 @@ ICON = "pycrograph_icon.png"      # PG mark only (window / app icon)
 LICENSE_TXT = "LICENSE.txt"       # copy of the repository LICENSE (About > Legal)
 NOTICES = "THIRD_PARTY_NOTICES.txt"   # scripts/make_third_party_notices.py
 CITATION = "CITATION.cff"         # copy of the repository CITATION.cff (About > Repository)
+JOURNAL_PRESETS = "journal_presets.json"   # built-in page presets (journal_presets.py)
 # Both are rendered from docs/_static/logo/*.svg with rsvg: QtSvg cannot draw
 # the logo's clipPath / blur, so the .svg files are never loaded in Qt.
 
@@ -84,6 +85,9 @@ def run_selfcheck(out: Optional[str] = None) -> int:
             found.append(p.name)
         lic = resource_path(LICENSE_TXT).read_text(encoding="utf-8")
         assert "GNU GENERAL PUBLIC LICENSE" in lic and "Version 3" in lic, "LICENSE.txt is not the GPLv3"
+        from .journal_presets import load_catalog
+        n = len(load_catalog().presets)                  # validated (pydantic)
+        found.append(f"{JOURNAL_PRESETS} ({n} presets)")
         notices = resource_path(NOTICES).read_text(encoding="utf-8")
         for needle in ("Package: PySide6 ", "GNU LESSER GENERAL PUBLIC LICENSE", "Package: numpy "):
             assert needle in notices, f"{NOTICES}: no {needle.strip()!r}"

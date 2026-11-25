@@ -1,0 +1,1240 @@
+{
+  "schema": 1,
+  "checked": "2026-11-25",
+  "legend": {
+    "width_mm / max_height_mm": "final printed size; max_height_mm leaves room for the legend when the journal says so",
+    "dpi": "minimum effective resolution for raster images (photos / micrographs) at final size; combination art (image + text) often needs more, see note",
+    "font_size_pt": "default label size for new figures; font_min_pt / font_max_pt = journal range when given; arial is used as the cross-platform stand-in when a journal asks for Helvetica (or 'Arial/Helvetica').",
+    "min_line_pt": "thinnest acceptable line at final size (0.5 = Pycrograph default when the journal gives no number)",
+    "status": "where the STATED values come from: official = the publisher's own page/PDF; secondary = only consistent third-party summaries; mixed = some stated values official, some secondary. Fields in `unverified` are never covered by the status: they are conservative defaults.",
+    "unverified": "fields NOT stated by the source (filled with a conservative default); show them as such in the UI"
+  },
+  "presets": [
+    {
+      "name": "Nature single column",
+      "publisher": "Nature Portfolio",
+      "width_mm": 89,
+      "max_height_mm": 170,
+      "dpi": 300,
+      "font_family": "Arial",
+      "font_size_pt": 7,
+      "font_min_pt": 5,
+      "font_max_pt": 7,
+      "min_line_pt": 0.25,
+      "status": "official",
+      "unverified": [],
+      "applies_to": [
+        "Nature",
+        "Nature Communications",
+        "Nature Cell Biology",
+        "Nature Methods",
+        "Nature Physics",
+        "other Nature Portfolio research journals (check the journal page)"
+      ],
+      "source": "https://research-figure-guide.nature.com/figures/building-and-exporting-figure-panels/",
+      "note": "Max height 170 mm leaves room for the legend (full page depth 247 mm). Text 5-7 pt, panel labels 8 pt bold. Keep this exact name: existing preferences and figures use it."
+    },
+    {
+      "name": "Nature 1.5 column (120 mm)",
+      "publisher": "Nature Portfolio",
+      "width_mm": 120,
+      "max_height_mm": 170,
+      "dpi": 300,
+      "font_family": "Arial",
+      "font_size_pt": 7,
+      "font_min_pt": 5,
+      "font_max_pt": 7,
+      "min_line_pt": 0.25,
+      "status": "official",
+      "unverified": [],
+      "applies_to": [
+        "Nature Portfolio"
+      ],
+      "source": "https://www.nature.com/nature/for-authors/final-submission",
+      "note": "1.5 columns = 120-136 mm, where necessary. Lines 0.25-1 pt (Nature Extended Data guide; no separate value for main figures). Panel letters are 8 pt bold, above the 5-7 pt text range."
+    },
+    {
+      "name": "Nature 1.5 column (136 mm)",
+      "publisher": "Nature Portfolio",
+      "width_mm": 136,
+      "max_height_mm": 170,
+      "dpi": 300,
+      "font_family": "Arial",
+      "font_size_pt": 7,
+      "font_min_pt": 5,
+      "font_max_pt": 7,
+      "min_line_pt": 0.25,
+      "status": "official",
+      "unverified": [],
+      "applies_to": [
+        "Nature Portfolio"
+      ],
+      "source": "https://www.nature.com/nature/for-authors/final-submission",
+      "note": "Lines 0.25-1 pt (Nature Extended Data guide; no separate value for main figures). Panel letters are 8 pt bold, above the 5-7 pt text range."
+    },
+    {
+      "name": "Nature double column",
+      "publisher": "Nature Portfolio",
+      "width_mm": 183,
+      "max_height_mm": 170,
+      "dpi": 300,
+      "font_family": "Arial",
+      "font_size_pt": 7,
+      "font_min_pt": 5,
+      "font_max_pt": 7,
+      "min_line_pt": 0.25,
+      "status": "official",
+      "unverified": [],
+      "applies_to": [
+        "Nature Portfolio"
+      ],
+      "source": "https://research-figure-guide.nature.com/figures/building-and-exporting-figure-panels/",
+      "note": "Keep this exact name: it is the app default. Lines 0.25-1 pt (Nature Extended Data guide; no separate value for main figures). Panel letters are 8 pt bold, above the 5-7 pt text range."
+    },
+    {
+      "name": "Nature Reviews (max)",
+      "publisher": "Nature Portfolio",
+      "width_mm": 180,
+      "max_height_mm": 215,
+      "dpi": 300,
+      "font_family": "Arial",
+      "font_size_pt": 8,
+      "min_line_pt": 0.5,
+      "status": "official",
+      "unverified": [
+        "min_line_pt"
+      ],
+      "applies_to": [
+        "Nature Reviews journals"
+      ],
+      "source": "https://www.nature.com/documents/natrev-artworkguide.pdf",
+      "note": "Portrait only; 8 pt text."
+    },
+    {
+      "name": "Cell Press 2-column journals: 1 column (85 mm)",
+      "publisher": "Cell Press",
+      "width_mm": 85,
+      "max_height_mm": 225,
+      "dpi": 300,
+      "font_family": "Arial",
+      "font_size_pt": 7,
+      "font_min_pt": 6,
+      "min_line_pt": 0.5,
+      "status": "secondary",
+      "unverified": [
+        "max_height_mm",
+        "min_line_pt"
+      ],
+      "applies_to": [
+        "Cell Reports",
+        "Molecular Cell",
+        "Cancer Cell",
+        "Cell Metabolism",
+        "Biophysical Journal (Cell Press, assumed)",
+        "other 2-column Cell Press titles"
+      ],
+      "source": "https://www.cell.com/information-for-authors/figure-guidelines",
+      "note": "Official page not reachable from the research session; widths and dpi agree across several summaries. All figures must fit an 8.5 x 11 in page. Photos 300 dpi, B&W 500 dpi, line art 1000 dpi. Avenir or Arial, about 7 pt."
+    },
+    {
+      "name": "Cell Press 2-column journals: 1.5 column (114 mm)",
+      "publisher": "Cell Press",
+      "width_mm": 114,
+      "max_height_mm": 225,
+      "dpi": 300,
+      "font_family": "Arial",
+      "font_size_pt": 7,
+      "font_min_pt": 6,
+      "min_line_pt": 0.5,
+      "status": "secondary",
+      "unverified": [
+        "max_height_mm",
+        "min_line_pt"
+      ],
+      "applies_to": [
+        "2-column Cell Press titles"
+      ],
+      "source": "https://www.cell.com/information-for-authors/figure-guidelines",
+      "note": ""
+    },
+    {
+      "name": "Cell Press 2-column journals: full width (174 mm)",
+      "publisher": "Cell Press",
+      "width_mm": 174,
+      "max_height_mm": 225,
+      "dpi": 300,
+      "font_family": "Arial",
+      "font_size_pt": 7,
+      "font_min_pt": 6,
+      "min_line_pt": 0.5,
+      "status": "secondary",
+      "unverified": [
+        "max_height_mm",
+        "min_line_pt"
+      ],
+      "applies_to": [
+        "2-column Cell Press titles"
+      ],
+      "source": "https://www.cell.com/information-for-authors/figure-guidelines",
+      "note": ""
+    },
+    {
+      "name": "Cell Press 3-column journals: 1 column (55 mm)",
+      "publisher": "Cell Press",
+      "width_mm": 55,
+      "max_height_mm": 225,
+      "dpi": 300,
+      "font_family": "Arial",
+      "font_size_pt": 7,
+      "font_min_pt": 6,
+      "min_line_pt": 0.5,
+      "status": "secondary",
+      "unverified": [
+        "max_height_mm",
+        "min_line_pt"
+      ],
+      "applies_to": [
+        "3-column Cell Press titles (check the journal's format)"
+      ],
+      "source": "https://www.cell.com/information-for-authors/figure-guidelines",
+      "note": ""
+    },
+    {
+      "name": "Cell Press 3-column journals: 2 columns (114 mm)",
+      "publisher": "Cell Press",
+      "width_mm": 114,
+      "max_height_mm": 225,
+      "dpi": 300,
+      "font_family": "Arial",
+      "font_size_pt": 7,
+      "font_min_pt": 6,
+      "min_line_pt": 0.5,
+      "status": "secondary",
+      "unverified": [
+        "max_height_mm",
+        "min_line_pt"
+      ],
+      "applies_to": [
+        "3-column Cell Press titles"
+      ],
+      "source": "https://www.cell.com/information-for-authors/figure-guidelines",
+      "note": ""
+    },
+    {
+      "name": "Cell Press 3-column journals: full width (174 mm)",
+      "publisher": "Cell Press",
+      "width_mm": 174,
+      "max_height_mm": 225,
+      "dpi": 300,
+      "font_family": "Arial",
+      "font_size_pt": 7,
+      "font_min_pt": 6,
+      "min_line_pt": 0.5,
+      "status": "secondary",
+      "unverified": [
+        "max_height_mm",
+        "min_line_pt"
+      ],
+      "applies_to": [
+        "3-column Cell Press titles"
+      ],
+      "source": "https://www.cell.com/information-for-authors/figure-guidelines",
+      "note": ""
+    },
+    {
+      "name": "Science: 1 column (57 mm)",
+      "publisher": "AAAS",
+      "width_mm": 57,
+      "max_height_mm": 199,
+      "dpi": 300,
+      "font_family": "Arial",
+      "font_size_pt": 7,
+      "font_min_pt": 5,
+      "min_line_pt": 0.5,
+      "status": "secondary",
+      "unverified": [
+        "max_height_mm",
+        "min_line_pt"
+      ],
+      "applies_to": [
+        "Science"
+      ],
+      "source": "https://www.science.org/content/page/instructions-preparing-initial-manuscript",
+      "note": "Helvetica preferred (Arial used as stand-in); lettering about 7 pt, never below 5 pt. Height: Science gives no figure depth; 199 mm is the Science-family depth that leaves room for the legend (Science Advances guide, page depth 227.5 mm)."
+    },
+    {
+      "name": "Science: 2 columns (121 mm)",
+      "publisher": "AAAS",
+      "width_mm": 121,
+      "max_height_mm": 199,
+      "dpi": 300,
+      "font_family": "Arial",
+      "font_size_pt": 7,
+      "font_min_pt": 5,
+      "min_line_pt": 0.5,
+      "status": "secondary",
+      "unverified": [
+        "max_height_mm",
+        "min_line_pt"
+      ],
+      "applies_to": [
+        "Science"
+      ],
+      "source": "https://www.science.org/content/page/instructions-preparing-initial-manuscript",
+      "note": ""
+    },
+    {
+      "name": "Science: 3 columns (184 mm)",
+      "publisher": "AAAS",
+      "width_mm": 184,
+      "max_height_mm": 199,
+      "dpi": 300,
+      "font_family": "Arial",
+      "font_size_pt": 7,
+      "font_min_pt": 5,
+      "min_line_pt": 0.5,
+      "status": "secondary",
+      "unverified": [
+        "max_height_mm",
+        "min_line_pt"
+      ],
+      "applies_to": [
+        "Science"
+      ],
+      "source": "https://www.science.org/content/page/instructions-preparing-initial-manuscript",
+      "note": ""
+    },
+    {
+      "name": "Science Advances: 1 column (90 mm)",
+      "publisher": "AAAS",
+      "width_mm": 90,
+      "max_height_mm": 199,
+      "dpi": 300,
+      "font_family": "Arial",
+      "font_size_pt": 7,
+      "min_line_pt": 0.5,
+      "status": "mixed",
+      "unverified": [
+        "dpi",
+        "font_size_pt",
+        "min_line_pt"
+      ],
+      "applies_to": [
+        "Science Advances"
+      ],
+      "source": "https://www.science.org/cms/asset/a720088d-4243-48fb-92d8-14a24f180a0f/sciadv_guide_to_preparing_figures_2026.pdf",
+      "note": "Page depth 227.5 mm; 199 mm recommended so the legend fits. RGB only."
+    },
+    {
+      "name": "Science Advances: intermediate (max 144 mm)",
+      "publisher": "AAAS",
+      "width_mm": 144,
+      "max_height_mm": 199,
+      "dpi": 300,
+      "font_family": "Arial",
+      "font_size_pt": 7,
+      "min_line_pt": 0.5,
+      "status": "mixed",
+      "unverified": [
+        "dpi",
+        "font_size_pt",
+        "min_line_pt"
+      ],
+      "applies_to": [
+        "Science Advances"
+      ],
+      "source": "https://www.science.org/cms/asset/a720088d-4243-48fb-92d8-14a24f180a0f/sciadv_guide_to_preparing_figures_2026.pdf",
+      "note": "Between 1 and 2 columns, width must not exceed 144 mm."
+    },
+    {
+      "name": "Science Advances: 2 columns (184 mm)",
+      "publisher": "AAAS",
+      "width_mm": 184,
+      "max_height_mm": 199,
+      "dpi": 300,
+      "font_family": "Arial",
+      "font_size_pt": 7,
+      "min_line_pt": 0.5,
+      "status": "mixed",
+      "unverified": [
+        "dpi",
+        "font_size_pt",
+        "min_line_pt"
+      ],
+      "applies_to": [
+        "Science Advances"
+      ],
+      "source": "https://www.science.org/cms/asset/a720088d-4243-48fb-92d8-14a24f180a0f/sciadv_guide_to_preparing_figures_2026.pdf",
+      "note": ""
+    },
+    {
+      "name": "PNAS: 1 column (87 mm)",
+      "publisher": "PNAS",
+      "width_mm": 87,
+      "max_height_mm": 225,
+      "dpi": 300,
+      "font_family": "Arial",
+      "font_size_pt": 8,
+      "font_min_pt": 6,
+      "font_max_pt": 12,
+      "min_line_pt": 0.5,
+      "status": "secondary",
+      "unverified": [
+        "min_line_pt"
+      ],
+      "applies_to": [
+        "PNAS",
+        "PNAS Nexus (check)"
+      ],
+      "source": "PNAS Digital Art Guidelines (pnas.org author center)",
+      "note": "Text 6-12 pt after reduction; combination art 600-900 ppi."
+    },
+    {
+      "name": "PNAS: 1.5 column (114 mm)",
+      "publisher": "PNAS",
+      "width_mm": 114,
+      "max_height_mm": 225,
+      "dpi": 300,
+      "font_family": "Arial",
+      "font_size_pt": 8,
+      "font_min_pt": 6,
+      "font_max_pt": 12,
+      "min_line_pt": 0.5,
+      "status": "secondary",
+      "unverified": [
+        "min_line_pt"
+      ],
+      "applies_to": [
+        "PNAS"
+      ],
+      "source": "PNAS Digital Art Guidelines (pnas.org author center)",
+      "note": ""
+    },
+    {
+      "name": "PNAS: 2 columns (178 mm)",
+      "publisher": "PNAS",
+      "width_mm": 178,
+      "max_height_mm": 225,
+      "dpi": 300,
+      "font_family": "Arial",
+      "font_size_pt": 8,
+      "font_min_pt": 6,
+      "font_max_pt": 12,
+      "min_line_pt": 0.5,
+      "status": "secondary",
+      "unverified": [
+        "min_line_pt"
+      ],
+      "applies_to": [
+        "PNAS"
+      ],
+      "source": "PNAS Digital Art Guidelines (pnas.org author center)",
+      "note": ""
+    },
+    {
+      "name": "PLOS: text column (132 mm)",
+      "publisher": "PLOS",
+      "width_mm": 132,
+      "max_height_mm": 222.3,
+      "dpi": 300,
+      "font_family": "Arial",
+      "font_size_pt": 8,
+      "font_min_pt": 8,
+      "font_max_pt": 12,
+      "min_line_pt": 0.5,
+      "status": "official",
+      "unverified": [
+        "min_line_pt"
+      ],
+      "applies_to": [
+        "PLOS ONE",
+        "PLOS Biology",
+        "PLOS Computational Biology",
+        "other PLOS journals"
+      ],
+      "source": "https://journals.plos.org/plosone/s/figures",
+      "note": "Width 66.8-190.5 mm; 132 mm aligns with the PDF text column. Arial, Times or Symbol only, 8-12 pt. 300-600 dpi."
+    },
+    {
+      "name": "PLOS: full page (190.5 mm)",
+      "publisher": "PLOS",
+      "width_mm": 190.5,
+      "max_height_mm": 222.3,
+      "dpi": 300,
+      "font_family": "Arial",
+      "font_size_pt": 8,
+      "font_min_pt": 8,
+      "font_max_pt": 12,
+      "min_line_pt": 0.5,
+      "status": "official",
+      "unverified": [
+        "min_line_pt"
+      ],
+      "applies_to": [
+        "PLOS journals"
+      ],
+      "source": "https://journals.plos.org/plosone/s/figures",
+      "note": ""
+    },
+    {
+      "name": "Rockefeller UP: full width (175 mm)",
+      "publisher": "Rockefeller University Press",
+      "width_mm": 175,
+      "max_height_mm": 228,
+      "dpi": 300,
+      "font_family": "Arial",
+      "font_size_pt": 8,
+      "min_line_pt": 0.5,
+      "status": "official",
+      "unverified": [
+        "font_size_pt",
+        "min_line_pt"
+      ],
+      "applies_to": [
+        "Journal of Cell Biology",
+        "Journal of Experimental Medicine",
+        "Journal of General Physiology"
+      ],
+      "source": "https://rupress.org/jcb/pages/fig-vid-guidelines",
+      "note": "Maximum 7 x 9 in; the page itself gives 17.5 x 22.8 cm, used here (slightly inside 177.8 x 228.6 mm). 300 dpi minimum; 600 dpi highly recommended when photos are combined with line art or text. Scale bars required on micrographs."
+    },
+    {
+      "name": "Company of Biologists: max (180 mm)",
+      "publisher": "The Company of Biologists",
+      "width_mm": 180,
+      "max_height_mm": 210,
+      "dpi": 300,
+      "font_family": "Arial",
+      "font_size_pt": 8,
+      "min_line_pt": 0.5,
+      "status": "official",
+      "unverified": [
+        "min_line_pt"
+      ],
+      "applies_to": [
+        "Journal of Cell Science",
+        "Development",
+        "Journal of Experimental Biology",
+        "Biology Open",
+        "Disease Models & Mechanisms"
+      ],
+      "source": "https://journals.biologists.com/jcs/pages/manuscript-prep",
+      "note": "Max 180 x 210 mm including labels. Photos 300 ppi; 600 ppi preferred with line art or text. Labels 8 pt Arial, panel letters 12 pt bold. Single/double column layouts preferred, but no column width is published: no single-column preset."
+    },
+    {
+      "name": "Elsevier: single column (90 mm)",
+      "publisher": "Elsevier",
+      "width_mm": 90,
+      "max_height_mm": 240,
+      "dpi": 300,
+      "font_family": "Arial",
+      "font_size_pt": 7,
+      "font_min_pt": 6,
+      "min_line_pt": 0.5,
+      "status": "official",
+      "unverified": [
+        "max_height_mm",
+        "min_line_pt"
+      ],
+      "applies_to": [
+        "Elsevier journals without their own figure guide (not Cell Press)"
+      ],
+      "source": "https://www.elsevier.com/about/policies-and-standards/author/artwork-and-media-instructions/artwork-sizing",
+      "note": "Halftones 300 dpi, combination 500 dpi, line art 1000 dpi. Lettering about 7 pt, not below 6 pt. Many Elsevier journals have their own rules."
+    },
+    {
+      "name": "Elsevier: 1.5 column (140 mm)",
+      "publisher": "Elsevier",
+      "width_mm": 140,
+      "max_height_mm": 240,
+      "dpi": 300,
+      "font_family": "Arial",
+      "font_size_pt": 7,
+      "font_min_pt": 6,
+      "min_line_pt": 0.5,
+      "status": "official",
+      "unverified": [
+        "max_height_mm",
+        "min_line_pt"
+      ],
+      "applies_to": [
+        "Elsevier journals"
+      ],
+      "source": "https://www.elsevier.com/about/policies-and-standards/author/artwork-and-media-instructions/artwork-sizing",
+      "note": ""
+    },
+    {
+      "name": "Elsevier: double column (190 mm)",
+      "publisher": "Elsevier",
+      "width_mm": 190,
+      "max_height_mm": 240,
+      "dpi": 300,
+      "font_family": "Arial",
+      "font_size_pt": 7,
+      "font_min_pt": 6,
+      "min_line_pt": 0.5,
+      "status": "official",
+      "unverified": [
+        "max_height_mm",
+        "min_line_pt"
+      ],
+      "applies_to": [
+        "Elsevier journals"
+      ],
+      "source": "https://www.elsevier.com/about/policies-and-standards/author/artwork-and-media-instructions/artwork-sizing",
+      "note": ""
+    },
+    {
+      "name": "JBC: 1 column (85 mm)",
+      "publisher": "ASBMB",
+      "width_mm": 85,
+      "max_height_mm": 248,
+      "dpi": 300,
+      "font_family": "Arial",
+      "font_size_pt": 8,
+      "min_line_pt": 0.5,
+      "status": "official",
+      "unverified": [
+        "dpi",
+        "font_size_pt",
+        "min_line_pt"
+      ],
+      "applies_to": [
+        "Journal of Biological Chemistry"
+      ],
+      "source": "https://legacyfileshare.elsevier.com/promis_misc/JBCDigitalArtGuidelines.pdf",
+      "note": "Height less than 248 mm."
+    },
+    {
+      "name": "JBC: 1.5 column (127 mm)",
+      "publisher": "ASBMB",
+      "width_mm": 127,
+      "max_height_mm": 248,
+      "dpi": 300,
+      "font_family": "Arial",
+      "font_size_pt": 8,
+      "min_line_pt": 0.5,
+      "status": "official",
+      "unverified": [
+        "dpi",
+        "font_size_pt",
+        "min_line_pt"
+      ],
+      "applies_to": [
+        "Journal of Biological Chemistry"
+      ],
+      "source": "https://legacyfileshare.elsevier.com/promis_misc/JBCDigitalArtGuidelines.pdf",
+      "note": ""
+    },
+    {
+      "name": "JBC: 2 columns (175 mm)",
+      "publisher": "ASBMB",
+      "width_mm": 175,
+      "max_height_mm": 248,
+      "dpi": 300,
+      "font_family": "Arial",
+      "font_size_pt": 8,
+      "min_line_pt": 0.5,
+      "status": "official",
+      "unverified": [
+        "dpi",
+        "font_size_pt",
+        "min_line_pt"
+      ],
+      "applies_to": [
+        "Journal of Biological Chemistry"
+      ],
+      "source": "https://legacyfileshare.elsevier.com/promis_misc/JBCDigitalArtGuidelines.pdf",
+      "note": ""
+    },
+    {
+      "name": "Springer (large format): 1 column (84 mm)",
+      "publisher": "Springer",
+      "width_mm": 84,
+      "max_height_mm": 234,
+      "dpi": 300,
+      "font_family": "Arial",
+      "font_size_pt": 8,
+      "font_min_pt": 8,
+      "font_max_pt": 12,
+      "min_line_pt": 0.3,
+      "status": "official",
+      "unverified": [
+        "dpi"
+      ],
+      "applies_to": [
+        "Springer large-format journals (e.g. Cell and Tissue Research, Cellular and Molecular Life Sciences: check)"
+      ],
+      "source": "https://rd.springer.com/journal/11789/submission-guidelines",
+      "note": "Widths 39 / 84 / 129 / 174 mm, height up to 234 mm. Lines at least 0.1 mm (0.3 pt). Helvetica/Arial, lettering 2-3 mm (8-12 pt)."
+    },
+    {
+      "name": "Springer (large format): 1.5 column (129 mm)",
+      "publisher": "Springer",
+      "width_mm": 129,
+      "max_height_mm": 234,
+      "dpi": 300,
+      "font_family": "Arial",
+      "font_size_pt": 8,
+      "font_min_pt": 8,
+      "font_max_pt": 12,
+      "min_line_pt": 0.3,
+      "status": "official",
+      "unverified": [
+        "dpi"
+      ],
+      "applies_to": [
+        "Springer large-format journals"
+      ],
+      "source": "https://rd.springer.com/journal/11789/submission-guidelines",
+      "note": ""
+    },
+    {
+      "name": "Springer (large format): full width (174 mm)",
+      "publisher": "Springer",
+      "width_mm": 174,
+      "max_height_mm": 234,
+      "dpi": 300,
+      "font_family": "Arial",
+      "font_size_pt": 8,
+      "font_min_pt": 8,
+      "font_max_pt": 12,
+      "min_line_pt": 0.3,
+      "status": "official",
+      "unverified": [
+        "dpi"
+      ],
+      "applies_to": [
+        "Springer large-format journals"
+      ],
+      "source": "https://rd.springer.com/journal/11789/submission-guidelines",
+      "note": ""
+    },
+    {
+      "name": "Springer (small format): 80 mm",
+      "publisher": "Springer",
+      "width_mm": 80,
+      "max_height_mm": 198,
+      "dpi": 300,
+      "font_family": "Arial",
+      "font_size_pt": 8,
+      "font_min_pt": 8,
+      "font_max_pt": 12,
+      "min_line_pt": 0.3,
+      "status": "official",
+      "unverified": [
+        "dpi"
+      ],
+      "applies_to": [
+        "Springer small-format journals and most books"
+      ],
+      "source": "https://rd.springer.com/journal/11789/submission-guidelines",
+      "note": ""
+    },
+    {
+      "name": "Springer (small format): 122 mm",
+      "publisher": "Springer",
+      "width_mm": 122,
+      "max_height_mm": 198,
+      "dpi": 300,
+      "font_family": "Arial",
+      "font_size_pt": 8,
+      "font_min_pt": 8,
+      "font_max_pt": 12,
+      "min_line_pt": 0.3,
+      "status": "official",
+      "unverified": [
+        "dpi"
+      ],
+      "applies_to": [
+        "Springer small-format journals and most books"
+      ],
+      "source": "https://rd.springer.com/journal/11789/submission-guidelines",
+      "note": ""
+    },
+    {
+      "name": "BMC: half page (85 mm)",
+      "publisher": "BMC (Springer Nature)",
+      "width_mm": 85,
+      "max_height_mm": 225,
+      "dpi": 300,
+      "font_family": "Arial",
+      "font_size_pt": 8,
+      "font_min_pt": 8,
+      "min_line_pt": 0.5,
+      "status": "official",
+      "unverified": [],
+      "applies_to": [
+        "BMC Biology",
+        "BMC journals"
+      ],
+      "source": "https://www.biomedcentral.com/getpublished/writing-resources/data-presentation",
+      "note": "Max height 225 mm for figure and legend. Lines at least 0.5 pt, text at least 8 pt."
+    },
+    {
+      "name": "BMC: full page (170 mm)",
+      "publisher": "BMC (Springer Nature)",
+      "width_mm": 170,
+      "max_height_mm": 225,
+      "dpi": 300,
+      "font_family": "Arial",
+      "font_size_pt": 8,
+      "font_min_pt": 8,
+      "min_line_pt": 0.5,
+      "status": "official",
+      "unverified": [],
+      "applies_to": [
+        "BMC journals"
+      ],
+      "source": "https://www.biomedcentral.com/getpublished/writing-resources/data-presentation",
+      "note": "BMC's figure-types page says 176 mm for double column; the data-presentation page says 170 mm. 170 mm fits both."
+    },
+    {
+      "name": "Wiley: small (80 mm)",
+      "publisher": "Wiley",
+      "width_mm": 80,
+      "max_height_mm": 240,
+      "dpi": 300,
+      "font_family": "Arial",
+      "font_size_pt": 8,
+      "min_line_pt": 0.5,
+      "status": "official",
+      "unverified": [
+        "max_height_mm",
+        "font_size_pt",
+        "min_line_pt"
+      ],
+      "applies_to": [
+        "Wiley journals without their own figure guide (EMBO Press titles have their own)"
+      ],
+      "source": "https://authors.wiley.com/author-resources/Journal-Authors/Prepare/manuscript-preparation-guidelines.html/figure-preparation.html",
+      "note": "Figures 80-180 mm wide, 300-600 dpi (images 300, line art 600)."
+    },
+    {
+      "name": "Wiley: large (180 mm)",
+      "publisher": "Wiley",
+      "width_mm": 180,
+      "max_height_mm": 240,
+      "dpi": 300,
+      "font_family": "Arial",
+      "font_size_pt": 8,
+      "min_line_pt": 0.5,
+      "status": "official",
+      "unverified": [
+        "max_height_mm",
+        "font_size_pt",
+        "min_line_pt"
+      ],
+      "applies_to": [
+        "Wiley journals"
+      ],
+      "source": "https://authors.wiley.com/author-resources/Journal-Authors/Prepare/manuscript-preparation-guidelines.html/figure-preparation.html",
+      "note": ""
+    },
+    {
+      "name": "Frontiers: 1 column (85 mm)",
+      "publisher": "Frontiers",
+      "width_mm": 85,
+      "max_height_mm": 240,
+      "dpi": 300,
+      "font_family": "Arial",
+      "font_size_pt": 8,
+      "font_min_pt": 8,
+      "min_line_pt": 0.5,
+      "status": "mixed",
+      "unverified": [
+        "max_height_mm",
+        "min_line_pt"
+      ],
+      "applies_to": [
+        "Frontiers in Cell and Developmental Biology",
+        "Frontiers journals"
+      ],
+      "source": "https://www.frontiersin.org/journals/cell-and-developmental-biology/for-authors/author-guidelines",
+      "note": "300 dpi, RGB (official checklist). Widths 85/180 mm, text at least 8 pt and figure no longer than a page come from summaries of the author guidelines."
+    },
+    {
+      "name": "Frontiers: 2 columns (180 mm)",
+      "publisher": "Frontiers",
+      "width_mm": 180,
+      "max_height_mm": 240,
+      "dpi": 300,
+      "font_family": "Arial",
+      "font_size_pt": 8,
+      "font_min_pt": 8,
+      "min_line_pt": 0.5,
+      "status": "mixed",
+      "unverified": [
+        "max_height_mm",
+        "min_line_pt"
+      ],
+      "applies_to": [
+        "Frontiers journals"
+      ],
+      "source": "https://www.frontiersin.org/journals/cell-and-developmental-biology/for-authors/author-guidelines",
+      "note": ""
+    },
+    {
+      "name": "JCI / JCI Insight: 90 mm",
+      "publisher": "ASCI",
+      "width_mm": 90,
+      "max_height_mm": 172.5,
+      "dpi": 600,
+      "font_family": "Arial",
+      "font_size_pt": 8,
+      "min_line_pt": 0.5,
+      "status": "official",
+      "unverified": [
+        "font_size_pt",
+        "min_line_pt"
+      ],
+      "applies_to": [
+        "Journal of Clinical Investigation",
+        "JCI Insight"
+      ],
+      "source": "https://www.jci.org/kiosk/publish/figures",
+      "note": "Width 9-18 cm; height with legend at most 17.25 cm (3/4 page). 600 ppi for all images. Photo panels at least 3 cm wide."
+    },
+    {
+      "name": "JCI / JCI Insight: 180 mm",
+      "publisher": "ASCI",
+      "width_mm": 180,
+      "max_height_mm": 172.5,
+      "dpi": 600,
+      "font_family": "Arial",
+      "font_size_pt": 8,
+      "min_line_pt": 0.5,
+      "status": "official",
+      "unverified": [
+        "font_size_pt",
+        "min_line_pt"
+      ],
+      "applies_to": [
+        "Journal of Clinical Investigation",
+        "JCI Insight"
+      ],
+      "source": "https://www.jci.org/kiosk/publish/figures",
+      "note": ""
+    },
+    {
+      "name": "Physical Review (APS): 1 column (86 mm)",
+      "publisher": "American Physical Society",
+      "width_mm": 86,
+      "max_height_mm": 240,
+      "dpi": 300,
+      "font_family": "Arial",
+      "font_size_pt": 8,
+      "min_line_pt": 0.5,
+      "status": "official",
+      "unverified": [
+        "max_height_mm",
+        "dpi",
+        "font_size_pt",
+        "min_line_pt"
+      ],
+      "applies_to": [
+        "Physical Review Letters",
+        "Physical Review E",
+        "PRX Life",
+        "Physical Review Applied"
+      ],
+      "source": "https://journals.aps.org/info/infoE.html",
+      "note": "Plan figures for the 8.6 cm column; 17.2 cm double column (APS Word template)."
+    },
+    {
+      "name": "Physical Review (APS): 2 columns (172 mm)",
+      "publisher": "American Physical Society",
+      "width_mm": 172,
+      "max_height_mm": 240,
+      "dpi": 300,
+      "font_family": "Arial",
+      "font_size_pt": 8,
+      "min_line_pt": 0.5,
+      "status": "official",
+      "unverified": [
+        "max_height_mm",
+        "dpi",
+        "font_size_pt",
+        "min_line_pt"
+      ],
+      "applies_to": [
+        "Physical Review journals"
+      ],
+      "source": "https://res.cloudinary.com/apsphysics/raw/upload/v1722521536/PhysRev-template_zysvy0.docx",
+      "note": ""
+    },
+    {
+      "name": "ACS: 1 column (84.7 mm)",
+      "publisher": "American Chemical Society",
+      "width_mm": 84.7,
+      "max_height_mm": 240,
+      "dpi": 300,
+      "font_family": "Arial",
+      "font_size_pt": 8,
+      "min_line_pt": 0.5,
+      "status": "official",
+      "unverified": [
+        "max_height_mm",
+        "font_size_pt",
+        "min_line_pt"
+      ],
+      "applies_to": [
+        "Nano Letters",
+        "ACS Nano",
+        "Biochemistry",
+        "J. Phys. Chem. B",
+        "Langmuir",
+        "other ACS journals"
+      ],
+      "source": "https://researcher-resources.acs.org/publish/author_guidelines?coden=jacs",
+      "note": "Single column up to 240 pt (3.33 in); double column 300-504 pt (4.17-7 in). Colour 300 dpi, greyscale 600 dpi, black-and-white 1200 dpi."
+    },
+    {
+      "name": "ACS: 2 columns (177.8 mm)",
+      "publisher": "American Chemical Society",
+      "width_mm": 177.8,
+      "max_height_mm": 240,
+      "dpi": 300,
+      "font_family": "Arial",
+      "font_size_pt": 8,
+      "min_line_pt": 0.5,
+      "status": "official",
+      "unverified": [
+        "max_height_mm",
+        "font_size_pt",
+        "min_line_pt"
+      ],
+      "applies_to": [
+        "ACS journals"
+      ],
+      "source": "https://researcher-resources.acs.org/publish/author_guidelines?coden=jacs",
+      "note": ""
+    },
+    {
+      "name": "RSC: 1 column (83 mm)",
+      "publisher": "Royal Society of Chemistry",
+      "width_mm": 83,
+      "max_height_mm": 233,
+      "dpi": 600,
+      "font_family": "Arial",
+      "font_size_pt": 7,
+      "min_line_pt": 0.5,
+      "status": "official",
+      "unverified": [
+        "min_line_pt"
+      ],
+      "applies_to": [
+        "Soft Matter",
+        "Lab on a Chip",
+        "PCCP",
+        "Chemical Science",
+        "other RSC journals"
+      ],
+      "source": "https://www.rsc.org/journals-books-databases/author-and-reviewer-hub/authors-information/prepare-and-format/figures-graphics-images",
+      "note": "No longer than 23.3 cm. Photographs at least 600 dpi. Arial/Helvetica 7 pt."
+    },
+    {
+      "name": "RSC: 2 columns (171 mm)",
+      "publisher": "Royal Society of Chemistry",
+      "width_mm": 171,
+      "max_height_mm": 233,
+      "dpi": 600,
+      "font_family": "Arial",
+      "font_size_pt": 7,
+      "min_line_pt": 0.5,
+      "status": "official",
+      "unverified": [
+        "min_line_pt"
+      ],
+      "applies_to": [
+        "RSC journals"
+      ],
+      "source": "https://www.rsc.org/journals-books-databases/author-and-reviewer-hub/authors-information/prepare-and-format/figures-graphics-images",
+      "note": ""
+    },
+    {
+      "name": "IOP Publishing: small (85 mm)",
+      "publisher": "IOP Publishing",
+      "width_mm": 85,
+      "max_height_mm": 240,
+      "dpi": 300,
+      "font_family": "Arial",
+      "font_size_pt": 8,
+      "font_min_pt": 8,
+      "font_max_pt": 12,
+      "min_line_pt": 0.5,
+      "status": "official",
+      "unverified": [
+        "max_height_mm",
+        "dpi",
+        "min_line_pt"
+      ],
+      "applies_to": [
+        "Physical Biology",
+        "New Journal of Physics",
+        "J. Phys. D"
+      ],
+      "source": "https://publishingsupport.iopscience.iop.org/questions/figures-journal-articles/",
+      "note": "Text 8-12 pt at final size; typically 8.5 cm (small) or 15 cm (large). Micrographs need a scale bar."
+    },
+    {
+      "name": "IOP Publishing: large (150 mm)",
+      "publisher": "IOP Publishing",
+      "width_mm": 150,
+      "max_height_mm": 240,
+      "dpi": 300,
+      "font_family": "Arial",
+      "font_size_pt": 8,
+      "font_min_pt": 8,
+      "font_max_pt": 12,
+      "min_line_pt": 0.5,
+      "status": "official",
+      "unverified": [
+        "max_height_mm",
+        "dpi",
+        "min_line_pt"
+      ],
+      "applies_to": [
+        "IOP journals"
+      ],
+      "source": "https://publishingsupport.iopscience.iop.org/questions/figures-journal-articles/",
+      "note": ""
+    },
+    {
+      "name": "IUCr: 1 column (88.5 mm)",
+      "publisher": "IUCr",
+      "width_mm": 88.5,
+      "max_height_mm": 240,
+      "dpi": 400,
+      "font_family": "Arial",
+      "font_size_pt": 8,
+      "min_line_pt": 0.35,
+      "status": "official",
+      "unverified": [
+        "max_height_mm",
+        "font_size_pt"
+      ],
+      "applies_to": [
+        "Acta Crystallographica D/F",
+        "IUCrJ",
+        "J. Appl. Cryst."
+      ],
+      "source": "https://journals.iucr.org/services/help/artwork/guide.html",
+      "note": "Colour at least 400 dpi; greyscale and monochrome 600 dpi. Lines 0.35-1.5 pt. Part-page 12 cm, full page 18 cm."
+    },
+    {
+      "name": "IUCr: full page (180 mm)",
+      "publisher": "IUCr",
+      "width_mm": 180,
+      "max_height_mm": 240,
+      "dpi": 400,
+      "font_family": "Arial",
+      "font_size_pt": 8,
+      "min_line_pt": 0.35,
+      "status": "official",
+      "unverified": [
+        "max_height_mm",
+        "font_size_pt"
+      ],
+      "applies_to": [
+        "IUCr journals"
+      ],
+      "source": "https://journals.iucr.org/services/help/artwork/guide.html",
+      "note": ""
+    },
+    {
+      "name": "PowerPoint widescreen 16:9 (13.333 x 7.5 in)",
+      "width_mm": 338.67,
+      "max_height_mm": 190.5,
+      "applies_to": [
+        "PowerPoint default since 2013",
+        "Keynote 16:9 (same aspect ratio)"
+      ],
+      "source": "https://support.microsoft.com/en-us/powerpoint/change-the-size-of-your-powerpoint-slides",
+      "note": "PowerPoint's default slide size. A slide is a landscape page: width > height. dpi 150 is a screen default, not a rule (a 16:9 slide on a Full HD projector is about 144 ppi; on 4K about 288 ppi). Font size 14 pt is a readability default for labels on a slide, not a rule.",
+      "publisher": "Presentation slides",
+      "dpi": 150,
+      "font_family": "Arial",
+      "font_size_pt": 14,
+      "min_line_pt": 0.5,
+      "status": "official",
+      "unverified": [
+        "dpi",
+        "font_size_pt",
+        "min_line_pt"
+      ]
+    },
+    {
+      "name": "PowerPoint standard 4:3 (10 x 7.5 in)",
+      "width_mm": 254.0,
+      "max_height_mm": 190.5,
+      "applies_to": [
+        "PowerPoint Standard / On-screen Show 4:3",
+        "Google Slides Standard 4:3"
+      ],
+      "source": "https://support.microsoft.com/en-us/powerpoint/change-the-size-of-your-powerpoint-slides",
+      "note": "A slide is a landscape page: width > height. dpi 150 is a screen default, not a rule (a 16:9 slide on a Full HD projector is about 144 ppi; on 4K about 288 ppi). Font size 14 pt is a readability default for labels on a slide, not a rule.",
+      "publisher": "Presentation slides",
+      "dpi": 150,
+      "font_family": "Arial",
+      "font_size_pt": 14,
+      "min_line_pt": 0.5,
+      "status": "official",
+      "unverified": [
+        "dpi",
+        "font_size_pt",
+        "min_line_pt"
+      ]
+    },
+    {
+      "name": "Google Slides 16:9 (10 x 5.625 in)",
+      "width_mm": 254.0,
+      "max_height_mm": 142.875,
+      "applies_to": [
+        "Google Slides default",
+        "PowerPoint On-screen Show (16:9)"
+      ],
+      "source": "https://support.microsoft.com/en-us/powerpoint/change-the-size-of-your-powerpoint-slides",
+      "note": "Size from Microsoft's page (PowerPoint 'On-screen Show (16:9)', 10 x 5.625 in). That it is also Google Slides' default comes from third-party summaries: Google's help page lists the 16:9 option but not its size. A slide is a landscape page: width > height. dpi 150 is a screen default, not a rule (a 16:9 slide on a Full HD projector is about 144 ppi; on 4K about 288 ppi). Font size 14 pt is a readability default for labels on a slide, not a rule.",
+      "publisher": "Presentation slides",
+      "dpi": 150,
+      "font_family": "Arial",
+      "font_size_pt": 14,
+      "min_line_pt": 0.5,
+      "status": "mixed",
+      "unverified": [
+        "dpi",
+        "font_size_pt",
+        "min_line_pt"
+      ]
+    },
+    {
+      "name": "16:10 slide (10 x 6.25 in)",
+      "width_mm": 254.0,
+      "max_height_mm": 158.75,
+      "applies_to": [
+        "PowerPoint On-screen Show (16:10)",
+        "Google Slides Widescreen 16:10"
+      ],
+      "source": "https://support.microsoft.com/en-us/powerpoint/change-the-size-of-your-powerpoint-slides",
+      "note": "Size from Microsoft's page (PowerPoint 'On-screen Show (16:10)', 10 x 6.25 in). Google Slides' 16:10 size comes from third-party summaries; Google's help page lists the option but not its size. A slide is a landscape page: width > height. dpi 150 is a screen default, not a rule (a 16:9 slide on a Full HD projector is about 144 ppi; on 4K about 288 ppi). Font size 14 pt is a readability default for labels on a slide, not a rule.",
+      "publisher": "Presentation slides",
+      "dpi": 150,
+      "font_family": "Arial",
+      "font_size_pt": 14,
+      "min_line_pt": 0.5,
+      "status": "mixed",
+      "unverified": [
+        "dpi",
+        "font_size_pt",
+        "min_line_pt"
+      ]
+    }
+  ],
+  "not_included": {
+    "EMBO Press (EMBO J, EMBO Reports, Mol Syst Biol, EMBO Mol Med)": "Official guide gives a 230 mm max height including legend, but the column widths could not be read from the PDF (only third-party values, 86-87 / 180 mm). Add once checked in EMBOPress_Figure_Guidelines.pdf.",
+    "eLife": "No fixed figure widths in the author guide (online-first). Any preset works; 300 dpi minimum.",
+    "MBoC (ASCB)": "Current figure specs not found.",
+    "Cancer Research (AACR), Oncogene": "Not researched yet."
+  }
+}

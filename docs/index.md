@@ -24,6 +24,7 @@ guide/library
 guide/figures
 guide/insets
 guide/locks
+guide/page-setup
 guide/preferences
 guide/about
 ```

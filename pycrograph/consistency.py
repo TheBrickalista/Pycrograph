@@ -31,6 +31,14 @@ columns_of) and each lock group.
 | source        | error    | source missing or modified (SHA-256 differs)                   |
 |               | warning  | source changed (size/date; re-hash pending) or hash not        |
 |               |          | recorded yet                                                   |
+| page_size     | warning  | page wider than the preset width or taller than the preset    |
+|               |          | maximum height (the message says when that limit is a default |
+|               |          | rather than a journal rule: catalog `unverified`)              |
+| font_size     | warning  | label or scale-bar text smaller than the journal's            |
+|               |          | font_min_pt or larger than font_max_pt (catalog entry of the  |
+|               |          | figure's preset; skipped when the journal gives no range).    |
+|               |          | A one-letter label (panel letter "a", "B'") is only checked   |
+|               |          | against the minimum: journals size them separately            |
 | resolution    | warning  | effective resolution below the page preset dpi (upsampled)    |
 | line_width    | warning  | border, scale bar, shape or inset line thinner than the       |
 |               |          | preset minimum line width                                      |
@@ -46,12 +54,18 @@ columns_of) and each lock group.
 | light_extract | info     | the panel reads a light-archive extract, not the original raw  |
 |               |          | file (only the archived planes / region exist)                 |
 
+The journal rules come from the figure's own preset snapshot
+(`Figure.page.preset`: sizes) and its catalog entry, looked up by name
+(journal_presets.journal_info: font range, which fields are defaults). A
+user-defined preset has no catalog entry: only its sizes are checked.
+
 Saturation needs pixels: pass `crop_plane(panel, ref, channel)` (e.g.
 PanelRenderer.crop_plane); without it that rule is skipped.
 """
 
 from __future__ import annotations
 
+import re
 from dataclasses import asdict, dataclass
 from typing import Callable, Literal, Optional
 
@@ -61,6 +75,7 @@ from . import layout as L
 from . import viewport as V
 from .display import compute_saturation_stats
 from .figures import LOCKED_FIELDS, bit_depths, channel_mismatches, lock_members, panel_channel
+from .journal_presets import DEFAULT_NOTE, JournalPreset, journal_info
 from .labels import group_time_unit, resolve_label
 from .models import Figure, ImageRef, Panel, Project
 from .scalebar import ScaleBarUnavailable, bar_geometry
@@ -167,12 +182,63 @@ def _off_page(p: Panel, figure: Figure) -> str:
     return ("past the page edge: " + ", ".join(sides)) if sides else ""
 
 
+def _default_note(info: Optional[JournalPreset], field: str) -> str:
+    return f" {DEFAULT_NOTE}" if info is not None and info.is_default(field) else ""
+
+
+def _page_size(figure: Figure, info: Optional[JournalPreset]) -> list[Issue]:
+    preset = figure.page.preset
+    w, h = figure.page.size_mm
+    over = []
+    if w > preset.width_mm + 1e-6:
+        over.append(f"wider than the {preset.width_mm:g} mm width"
+                    + _default_note(info, "width_mm"))
+    if h > preset.max_height_mm + 1e-6:
+        over.append(f"taller than the {preset.max_height_mm:g} mm maximum height"
+                    + _default_note(info, "max_height_mm"))
+    if not over:
+        return []
+    return [Issue("warning", "page_size", f"page {w:g} × {h:g} mm is "
+                  + " and ".join(over) + f" of “{preset.name}”", ())]
+
+
+_PANEL_LETTER = re.compile(r"^\(?[A-Za-z][′'’]?\)?$")
+
+
+def _font_size(label: str, p: Panel, figure: Figure,
+               info: Optional[JournalPreset]) -> Optional[Issue]:
+    if info is None or (info.font_min_pt is None and info.font_max_pt is None):
+        return None
+    default = figure.page.preset.font_size_pt
+    texts = [(f"label “{lb.text.strip()}”", lb.font_size_pt or default,
+              bool(_PANEL_LETTER.match(lb.text.strip())))
+             for lb in p.labels if lb.text.strip()]
+    if p.scale_bar.visible and p.scale_bar.show_label:
+        texts.append(("scale bar text", p.scale_bar.font_size_pt or default, False))
+    small = [f"{what} {size:g} pt" for what, size, _l in texts
+             if info.font_min_pt is not None and size < info.font_min_pt - 1e-6]
+    large = [f"{what} {size:g} pt" for what, size, letter in texts
+             if info.font_max_pt is not None and not letter and size > info.font_max_pt + 1e-6]
+    parts = []
+    if small:
+        parts.append(f"text below the {info.font_min_pt:g} pt minimum"
+                     + _default_note(info, "font_min_pt") + " — " + ", ".join(small))
+    if large:
+        parts.append(f"text above the {info.font_max_pt:g} pt maximum"
+                     + _default_note(info, "font_max_pt") + " — " + ", ".join(large))
+    if not parts:
+        return None
+    return Issue("warning", "font_size", f"{label}: " + "; ".join(parts)
+                 + f" ({info.publisher})", (p.id,))
+
+
 def check_figure(project: Project, figure: Figure,
                  source_status: Optional[SourceStatus] = None,
                  crop_plane: Optional[CropPlane] = None) -> list[Issue]:
     images = project.images
     preset = figure.page.preset
-    issues: list[Issue] = []
+    info = journal_info(preset.name)
+    issues: list[Issue] = _page_size(figure, info)
 
     # ---- groups: rows, columns, lock groups
     for kind, name, panels in groups(figure):
@@ -237,6 +303,9 @@ def check_figure(project: Project, figure: Figure,
         if thin:
             issues.append(Issue("warning", "line_width", f"{label}: lines below the {min_line:g} pt "
                                 f"minimum — " + ", ".join(thin), (p.id,)))
+        font = _font_size(label, p, figure, info)
+        if font is not None:
+            issues.append(font)
         off = _off_page(p, figure)
         if off:
             issues.append(Issue("warning", "off_page", f"{label}: {off} — cut off in the export",

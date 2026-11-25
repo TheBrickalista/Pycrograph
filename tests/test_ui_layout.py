@@ -286,18 +286,24 @@ def test_export_has_no_outlines_whatever_the_toggle(app, setup):
 def test_page_setup_and_presets(app, setup):
     w, ids, (pa, pb, pz) = setup
     tab, prefs_tab = w.figures_tab, w.preferences_tab
-    # Edit a preset in Preferences: saved to preferences.json.
+    # Built-in rows are read-only: duplicate one, edit the copy; saved.
     row = [p.name for p in w.prefs.presets].index("Nature single column")
     prefs_tab.table.item(row, 1).setText("90")
-    assert w.prefs.preset("Nature single column").width_mm == 90.0
+    assert w.prefs.preset("Nature single column").width_mm == 89.0
+    prefs_tab.table.selectRow(row)
+    prefs_tab.duplicate_preset()
+    mine = "Nature single column (2)"
+    row = [p.name for p in w.prefs.presets].index(mine)
+    prefs_tab.table.item(row, 1).setText("90")
+    assert w.prefs.preset(mine).width_mm == 90.0
     saved = json.loads(preferences_path(w.ws.root).read_text())
-    assert any(p["width_mm"] == 90.0 for p in saved["presets"])
+    assert [(p["name"], p["width_mm"]) for p in saved["presets"]] == [(mine, 90.0)]
     prefs_tab.table.item(row, 1).setText("-3")               # invalid: refused
-    assert w.prefs.preset("Nature single column").width_mm == 90.0
+    assert w.prefs.preset(mine).width_mm == 90.0
     assert prefs_tab.message.text()
-    # Default preset drives new figures.
-    prefs_tab.default_combo.setCurrentText("Nature single column")
-    prefs_tab._on_default(0)
+    # Default preset (Custom › the copy) drives new figures.
+    prefs_tab.default_picker.choose("Custom", mine)
+    assert w.prefs.default_preset == mine
     fig2 = tab.new_figure("Second")
     assert fig2.page.size_mm == (90.0, 170.0)
     # Page setup on the current figure: one figure-level entry.

@@ -6,6 +6,45 @@ All notable changes to Pycrograph are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- **Journal page presets catalog** (`resources/journal_presets.json`, 57
+  presets from 20 publishers, validated at load). It is the source of the
+  built-in presets; publisher, status (official / secondary / mixed), fields
+  the journal does not state, font range, journals, source and note stay in
+  the catalog (`journal_presets.JournalPreset`), looked up by preset name.
+- **Page setup**: choose **Publisher ▾** then **Size ▾** (e.g. *single column
+  — 89 mm*), or **Custom** (your presets, or a free page size). The dialog
+  shows the preset's sizes, dpi, font, minimum line, journals, note, source
+  link and a status badge (*Official*, *Secondary — verify*, *Mixed*);
+  values the journal does not state are greyed as defaults.
+- Consistency check: **page_size** (page wider than the preset width or
+  taller than its maximum height) and **font_size** (label or scale-bar text
+  outside the journal's range, when given; one-letter panel letters are
+  checked against the minimum only). Warnings say when the limit is a default
+  rather than a journal rule.
+- **Presentation slides** presets (PowerPoint widescreen 16:9 and standard
+  4:3, Google Slides 16:9, 16:10): they open as wide pages, in landscape
+  (`PageSetup.preset_layout`: a preset at least 1.25 times wider than tall);
+  the orientation toggle turns the same paper. Journal presets still open
+  in portrait.
+- Guide page *Page setup and journal presets*, with the preset table
+  generated from the catalog (`scripts/make_journal_presets_table.py`).
+- `--selfcheck` validates the bundled catalog.
+
+### Changed
+- Built-in presets always come from the catalog: `preferences.json` stores
+  only the user's own presets, and a saved preset with a built-in name is
+  replaced by the catalog's. The Preferences tab shows built-ins read-only
+  (Duplicate to adapt one; *Restore built-in presets* is gone) and chooses
+  the default preset by publisher, then size.
+- New figures get the catalog's *Nature double column*: 7 pt text (was 8 pt)
+  and 0.25 pt minimum line (was 0.5 pt). Existing figures keep their stored
+  preset; no project format change.
+- Existing figures set up with the old 8 pt Nature default now get
+  **font_size** warnings: 8 pt is above Nature's 5–7 pt text range (panel
+  letters are exempt from the maximum). Pick the size again in Page setup,
+  or set the labels' size, to clear them.
+
 ## [0.2.1] - 2026-11-23
 
 Second beta. A TIFF whose planes lie along one generic axis is now read as a

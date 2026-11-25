@@ -5,9 +5,10 @@
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, version 3 of the License.
 
-"""Preferences tab (journal page presets as editable data, default preset
-for new figures) and About tab (Legal / Copyright & Credits / Repository,
-as in PysternBlot)."""
+"""Preferences tab (journal page presets: the read-only catalog plus the
+user's own, editable; default preset for new figures, chosen by Publisher ▾
+then Size ▾) and About tab (Legal / Copyright & Credits / Repository, as in
+PysternBlot)."""
 
 from __future__ import annotations
 
@@ -15,28 +16,34 @@ import html
 from typing import Callable, Optional
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QFont, QFontDatabase, QFontInfo, QTextCursor
+from PySide6.QtGui import QBrush, QColor, QFont, QFontDatabase, QFontInfo, QTextCursor
 from PySide6.QtWidgets import (
-    QAbstractItemView, QButtonGroup, QComboBox, QHBoxLayout, QHeaderView, QLabel,
+    QAbstractItemView, QButtonGroup, QHBoxLayout, QHeaderView, QLabel,
     QPlainTextEdit, QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
 from .. import __version__
 from ..credits import credits_text, repository_text
+from ..journal_presets import journal_info
 from ..models import PagePreset
-from ..preferences import Preferences, builtin_presets
+from ..preferences import DEFAULT_PRESET, Preferences, is_builtin
 from ..selfcheck import CITATION, LICENSE_TXT, NOTICES, resource_path
+from .preset_picker import PresetPicker
 
-# (field, header, type)
+# (field, header, type): editable for the user's presets
 PRESET_COLUMNS = (("name", "Name", str), ("width_mm", "Width (mm)", float),
                   ("max_height_mm", "Max height (mm)", float), ("dpi", "dpi", int),
                   ("font_family", "Font", str), ("font_size_pt", "Font size (pt)", float),
                   ("min_line_pt", "Min line (pt)", float))
+INFO_COLUMNS = ("Publisher", "Status")          # read-only, from the catalog
+BUILTIN_COLOUR = "#6b7280"
 
 
 class PreferencesTab(QWidget):
     """Edits Preferences in place and calls `save` after every valid change
-    (preferences are app settings, not project data: not logged)."""
+    (preferences are app settings, not project data: not logged). Built-in
+    presets come from the journal catalog and are read-only here: Duplicate
+    one to adapt it."""
 
     def __init__(self, prefs: Optional[Preferences] = None,
                  save: Optional[Callable[[], None]] = None, parent=None):
@@ -49,12 +56,17 @@ class PreferencesTab(QWidget):
         title = QLabel("Preferences")
         title.setStyleSheet("font-size: 16px; font-weight: 600;")
         lay.addWidget(title)
-        sub = QLabel("Journal page presets (used by Page setup; values from each journal's "
-                     "author guidelines)")
+        sub = QLabel("Journal page presets (used by Page setup)")
         sub.setStyleSheet("font-weight: 600;")
         lay.addWidget(sub)
-        self.table = QTableWidget(0, len(PRESET_COLUMNS))
-        self.table.setHorizontalHeaderLabels([c[1] for c in PRESET_COLUMNS])
+        expl = QLabel("Grey rows are the built-in journal catalog (read-only; values from each "
+                      "journal's author guidelines — verify with the journal). Duplicate one or "
+                      "Add a preset to make your own.")
+        expl.setWordWrap(True)
+        expl.setStyleSheet("color: #6b7280;")
+        lay.addWidget(expl)
+        self.table = QTableWidget(0, len(PRESET_COLUMNS) + len(INFO_COLUMNS))
+        self.table.setHorizontalHeaderLabels([c[1] for c in PRESET_COLUMNS] + list(INFO_COLUMNS))
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
         self.table.verticalHeader().setVisible(False)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
@@ -65,20 +77,18 @@ class PreferencesTab(QWidget):
         self.add_btn = QPushButton("Add")
         self.dup_btn = QPushButton("Duplicate")
         self.del_btn = QPushButton("Delete")
-        self.restore_btn = QPushButton("Restore built-in presets")
         self.add_btn.clicked.connect(self.add_preset)
         self.dup_btn.clicked.connect(self.duplicate_preset)
         self.del_btn.clicked.connect(self.delete_preset)
-        self.restore_btn.clicked.connect(self.restore_builtins)
-        for b in (self.add_btn, self.dup_btn, self.del_btn, self.restore_btn):
+        for b in (self.add_btn, self.dup_btn, self.del_btn):
             row.addWidget(b)
         row.addStretch(1)
         lay.addLayout(row)
         drow = QHBoxLayout()
         drow.addWidget(QLabel("Default preset for new figures"))
-        self.default_combo = QComboBox()
-        self.default_combo.activated.connect(self._on_default)
-        drow.addWidget(self.default_combo)
+        self.default_picker = PresetPicker(self.prefs)
+        self.default_picker.chosen.connect(self._on_default)
+        drow.addWidget(self.default_picker)
         drow.addStretch(1)
         lay.addLayout(drow)
         self.message = QLabel("")
@@ -94,21 +104,35 @@ class PreferencesTab(QWidget):
     def reload(self) -> None:
         self._loading = True
         self.table.setRowCount(0)
+        grey = QBrush(QColor(BUILTIN_COLOUR))
         for preset in self.prefs.presets:
             r = self.table.rowCount()
             self.table.insertRow(r)
-            for c, (field, _h, _t) in enumerate(PRESET_COLUMNS):
-                v = getattr(preset, field)
-                self.table.setItem(r, c, QTableWidgetItem(f"{v:g}" if isinstance(v, float) else str(v)))
-        self.default_combo.clear()
-        self.default_combo.addItems([p.name for p in self.prefs.presets])
-        self.default_combo.setCurrentText(self.prefs.default().name)
+            info = journal_info(preset.name)
+            builtin = is_builtin(preset.name)
+            cells = [f"{v:g}" if isinstance(v, float) else str(v)
+                     for v in (getattr(preset, f) for f, _h, _t in PRESET_COLUMNS)]
+            cells += [info.publisher, info.badge] if info else ["", "User"]
+            for c, text in enumerate(cells):
+                item = QTableWidgetItem(text)
+                if builtin or c >= len(PRESET_COLUMNS):
+                    item.setFlags(item.flags() & ~Qt.ItemIsEditable)
+                if builtin:
+                    item.setForeground(grey)
+                    if info:
+                        item.setToolTip(info.source)
+                self.table.setItem(r, c, item)
+        self.default_picker.rebuild(self.prefs)
+        self.default_picker.set_current(self.prefs.default().name)
         self._loading = False
 
     def _on_item_changed(self, item: QTableWidgetItem) -> None:
         if self._loading:
             return
         r, c = item.row(), item.column()
+        if c >= len(PRESET_COLUMNS) or is_builtin(self.prefs.presets[r].name):
+            self.reload()
+            return
         field, header, typ = PRESET_COLUMNS[c]
         preset = self.prefs.presets[r]
         old_name = preset.name
@@ -117,6 +141,10 @@ class PreferencesTab(QWidget):
             updated = PagePreset.model_validate({**preset.model_dump(), field: value})
         except (ValueError, TypeError) as exc:
             self.message.setText(f"{header}: invalid value ({str(exc).splitlines()[0]})")
+            self.reload()
+            return
+        if field == "name" and is_builtin(updated.name):
+            self.message.setText(f"“{updated.name}” is a built-in preset name")
             self.reload()
             return
         self.prefs.presets[r] = updated
@@ -148,32 +176,30 @@ class PreferencesTab(QWidget):
         self._commit()
 
     def duplicate_preset(self) -> None:
+        """A user copy of the selected preset (built-in or not), at the end."""
         r = self._selected_row()
         if r >= 0:
             src = self.prefs.presets[r]
-            self.prefs.presets.insert(r + 1, src.model_copy(update={"name": self._unique(src.name)}))
+            self.prefs.presets.append(src.model_copy(update={"name": self._unique(src.name)}))
             self._commit()
 
     def delete_preset(self) -> None:
         r = self._selected_row()
-        if r >= 0 and len(self.prefs.presets) > 1:
-            removed = self.prefs.presets.pop(r)
-            if self.prefs.default_preset == removed.name:
-                self.prefs.default_preset = self.prefs.presets[0].name
-            self._commit()
-
-    def restore_builtins(self) -> None:
-        names = {p.name for p in self.prefs.presets}
-        for p in builtin_presets():
-            if p.name in names:
-                i = next(i for i, q in enumerate(self.prefs.presets) if q.name == p.name)
-                self.prefs.presets[i] = p
-            else:
-                self.prefs.presets.append(p)
+        if r < 0:
+            return
+        if is_builtin(self.prefs.presets[r].name):
+            self.message.setText("Built-in presets cannot be deleted")
+            return
+        removed = self.prefs.presets.pop(r)
+        if self.prefs.default_preset == removed.name:
+            self.prefs.default_preset = DEFAULT_PRESET
+        self.message.setText("")
         self._commit()
 
-    def _on_default(self, _i: int) -> None:
-        self.prefs.default_preset = self.default_combo.currentText()
+    def _on_default(self, name: str) -> None:
+        if self.prefs.preset(name) is None:
+            return
+        self.prefs.default_preset = name
         self._commit()
 
     def _commit(self) -> None:
