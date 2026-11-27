@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..models import Project, ProjectMeta
+from ..storage import needs_newer_app
 from ..ui_text import plural
 
 ROLE = Qt.UserRole
@@ -111,7 +112,11 @@ class ProjectsTab(QWidget):
         for m in self._metas:
             r = self.table.rowCount()
             self.table.insertRow(r)
-            name = QTableWidgetItem(m.name + ("  (archived)" if m.is_archived else ""))
+            name = QTableWidgetItem(m.name + ("  (archived)" if m.is_archived else "")
+                                    + ("  (needs a newer Pycrograph)" if needs_newer_app(m) else ""))
+            if needs_newer_app(m):
+                name.setToolTip(f"Saved with project format {m.format_version} by Pycrograph "
+                                f"{m.app_version or '?'}; update Pycrograph to open it.")
             name.setData(ROLE, m.id)
             self.table.setItem(r, 0, name)
             self.table.setItem(r, 1, QTableWidgetItem(m.modified_utc or ""))

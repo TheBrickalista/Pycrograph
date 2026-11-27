@@ -37,6 +37,7 @@ concepts/provenance
 concepts/pcarchive-format
 concepts/display-pipeline
 concepts/locks-and-insets
+concepts/pyblication-plugin
 ```
 
 ```{toctree}

@@ -6,6 +6,35 @@ All notable changes to Pycrograph are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- Pyblication plugin (plugin protocol v1, `pycrograph.plugin`, entry point
+  `pyblication.plugins`): Pyblication can tell which project and figure produced
+  an exported file. It gets the project file, the provenance sidecar and the raw
+  images the export was made from, and can reopen the project in Pycrograph.
+  The plugin is read-only and loads without Qt. Pycrograph still has no
+  dependency on Pyblication.
+- `--project <id>` opens that project at start-up. Without it, the app starts as
+  before.
+- Edit lock per project (`projects/<id>/.lock`), for two windows or installations
+  on one workspace (for example, a standalone Pycrograph and the one bundled in
+  Pyblication). A project edited elsewhere opens read-only (the default), or
+  "anyway", or not at all. Read-only shows a banner and saves, imports and
+  exports nothing. A lock left by a crash is taken over. A window whose lock was
+  taken over turns read-only before its next save.
+- Projects saved by a newer Pycrograph are listed as "(needs a newer
+  Pycrograph)"; opening one is refused.
+
+### Changed
+- A save never overwrites a `project.json` written meanwhile by a newer
+  Pycrograph, nor one it cannot read: its format is checked from the file
+  (fully parsed when the version is not at the start), never guessed.
+- `default_workspace()` moved to the Qt-free `pycrograph/paths.py`;
+  `pycrograph.app.default_workspace` still works.
+
+### Compatibility
+- Project format unchanged: 5. The `.lock` file is not project data: it is never
+  archived and can be deleted when no Pycrograph is running.
+
 ## [0.2.2] - 2026-11-25
 
 Third beta. Page setup draws on a sourced catalog of journal page presets

@@ -7,22 +7,18 @@
 
 from __future__ import annotations
 
-import os
-from pathlib import Path
+from typing import Optional
 
 from PySide6.QtWidgets import QApplication
 
+from .paths import default_workspace   # Qt-free, also used by the Pyblication plugin
 from .storage import Workspace
 from .ui.main_window import MainWindow
 
 
-def default_workspace() -> Path:
-    """~/.pycrograph, overridable with PYCROGRAPH_WORKSPACE (tests, demos)."""
-    env = os.environ.get("PYCROGRAPH_WORKSPACE")
-    return Path(env).expanduser() if env else Path.home() / ".pycrograph"
-
-
-def run(argv: list[str] | None = None) -> int:
+def run(argv: list[str] | None = None, project_id: Optional[str] = None) -> int:
+    """Start the app. With project_id (--project, from the Pyblication
+    plugin) that project is opened instead of the most recent one."""
     app = QApplication.instance() or QApplication(argv or [])
     app.setOrganizationName("IRCAN")
     app.setApplicationName("Pycrograph")
@@ -32,6 +28,10 @@ def run(argv: list[str] | None = None) -> int:
         app.setWindowIcon(QIcon(str(icon_path())))
     ws = Workspace(default_workspace())
     ws.ensure()
-    win = MainWindow(ws)
+    if project_id:
+        win = MainWindow(ws, auto_open=False)
+        win.open_project_by_id(project_id)
+    else:
+        win = MainWindow(ws)
     win.show()
     return app.exec()

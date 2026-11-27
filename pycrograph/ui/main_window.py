@@ -17,6 +17,12 @@ tab is the figure editor (ui/figures_tab.py).
 Model changes follow PysternBlot's rule: the screen updates on every tick of
 a continuous control, but one operation-log entry (old -> new) and one save
 happen per gesture, so project.json and the hash-chained log never disagree.
+
+Opening a project takes its edit lock (project_lock.py). If another window
+or installation holds it, the user chooses: open read-only (default), open
+anyway, or cancel. A read-only window never saves (so no log entry reaches
+disk), imports or exports; save() is the single gate, and it also notices
+when another window took the lock over (the window then turns read-only).
 """
 
 from __future__ import annotations
@@ -45,7 +51,8 @@ from ..preferences import load_preferences, save_preferences
 from ..render import PanelRenderer
 from ..storage import (
     expected_sha256,
-    HashCancelled, RefStatus, RelinkError, Workspace, add_image_to_dataset, check_image,
+    HashCancelled, ProjectFormatError, ProjectReadOnlyError, RefStatus, RelinkError, Workspace,
+    add_image_to_dataset, check_image, needs_newer_app,
     common_prefix_change, copy_into_project, create_dataset, log_operation, register_image,
     relink_by_prefix, relink_image, remove_image_from_dataset, rename_dataset,
     PlaneAxisError, set_dataset_hidden, set_image_annotation, set_image_hash, set_plane_axis,
@@ -91,6 +98,10 @@ class MainWindow(QMainWindow):
         self._status: dict[str, str] = {}
         # Pending gesture: field path -> (image_id, old_value, new_value)
         self._pending: dict[str, tuple[str, Any, Any]] = {}
+        # Read-only mode (another window holds the edit lock): its holder for
+        # the banner, and whether the "changes are not saved" notice was shown.
+        self._read_only_holder = None
+        self._read_only_notice_shown = False
 
         self.setWindowTitle("Pycrograph")
         self.setMinimumSize(1000, 640)
@@ -117,7 +128,7 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(f"Pycrograph {__version__} — workspace {self.ws.root}")
 
         if auto_open:
-            projects = self.ws.list_projects()
+            projects = [m for m in self.ws.list_projects() if not needs_newer_app(m)]
             if projects:
                 self.open_project_by_id(projects[0].id)
         self._update_enabled()
@@ -164,6 +175,7 @@ class MainWindow(QMainWindow):
         # imports through the one import flow below.
         self.figures_tab.library_state = lambda: (dict(self.library._thumbs), dict(self._status))
         self.figures_tab.import_handler = lambda dataset_id: self.import_images(dataset_id or None)
+        self.figures_tab.is_read_only = lambda: self._is_read_only()
         self.tabs.addTab(self.figures_tab, "Figures")
 
         self.preferences_tab = PreferencesTab(self.prefs, save=self.save_prefs)
@@ -172,7 +184,19 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.about_tab, "About")
 
         self.tabs.currentChanged.connect(self._on_tab_changed)
-        self.setCentralWidget(self.tabs)
+        # Read-only banner above the tabs (_update_read_only_indicator).
+        self.read_only_banner = QLabel()
+        self.read_only_banner.setWordWrap(True)
+        self.read_only_banner.setStyleSheet(
+            "background: #fff4d6; color: #5c4400; border-bottom: 1px solid #e0c060; padding: 6px 10px;")
+        self.read_only_banner.setVisible(False)
+        central = QWidget()
+        central_l = QVBoxLayout(central)
+        central_l.setContentsMargins(0, 0, 0, 0)
+        central_l.setSpacing(0)
+        central_l.addWidget(self.read_only_banner)
+        central_l.addWidget(self.tabs, 1)
+        self.setCentralWidget(central)
         self.projects.refresh_requested()
         self.projects.set_open_project(None)
         self.tabs.setCurrentWidget(self.home)
@@ -300,7 +324,8 @@ class MainWindow(QMainWindow):
         for a in (self.a_archive, self.a_dataset, self.a_import, self.a_verify, self.a_integrity):
             a.setEnabled(has)
         self.a_add_to_figure.setEnabled(has and self.ref is not None)
-        self.setWindowTitle(f"Pycrograph — {self.project.project.name}" if has else "Pycrograph")
+        title = f"Pycrograph — {self.project.project.name}" if has else "Pycrograph"
+        self.setWindowTitle(title + (" — read-only" if self._is_read_only() else ""))
 
     def _section(self, title: str) -> tuple[QFrame, QVBoxLayout]:
         frame = QFrame()
@@ -373,9 +398,12 @@ class MainWindow(QMainWindow):
         if not ok or not name.strip():
             return
         self._close_project()
-        self.project = self.ws.create_project(name)
+        project = self.ws.create_project(name)
+        self.ws.acquire_lock(project.project.id)          # a new id: always free
+        self.project = project
+        self._set_read_only(project.project.id, False)
         create_dataset(self.project, "Unsorted")
-        self.ws.save_project(self.project)
+        self.save()
         self._after_project_opened()
 
     def open_project(self) -> None:
@@ -383,27 +411,138 @@ class MainWindow(QMainWindow):
         if not metas:
             QMessageBox.information(self, "Open project", "No project in this workspace yet.")
             return
-        labels = [f"{m.name}{'  (archived)' if m.is_archived else ''}  —  {m.modified_utc or m.created_utc}"
-                  for m in metas]
+        labels = [f"{m.name}{'  (archived)' if m.is_archived else ''}"
+                  f"{'  (needs a newer Pycrograph)' if needs_newer_app(m) else ''}"
+                  f"  —  {m.modified_utc or m.created_utc}" for m in metas]
         choice, ok = QInputDialog.getItem(self, "Open project", "Project:", labels, 0, False)
         if not ok:
             return
         meta = metas[labels.index(choice)]
         self.open_project_by_id(meta.id)
-        if meta.is_archived and self.project is not None:
+        if meta.is_archived and self.project is not None and self.project.project.id == meta.id:
             if QMessageBox.question(self, "Archived project",
                                     "This project is archived. Restore it?") == QMessageBox.Yes:
-                self.ws.set_project_archived(self.project, False)
+                if not self._refuse_if_read_only("restore it"):
+                    self.ws.set_project_archived(self.project, False)
 
     def open_project_by_id(self, project_id: str) -> None:
+        """Load, take the edit lock (or ask: read-only / anyway / cancel),
+        then switch. A project written by a newer Pycrograph is refused."""
         try:
             project = self.ws.load_project(project_id)
         except (OSError, ValueError) as exc:
             QMessageBox.critical(self, "Open project", f"Cannot open project:\n{exc}")
             return
-        self._close_project()
+        read_only = self._begin_editing(project_id)
+        if read_only is None:                                   # cancelled
+            return
+        holder = self._read_only_holder
+        self._close_project(keep_lock=project_id)
         self.project = project
+        self._read_only_holder = holder
+        self._set_read_only(project_id, read_only)
         self._after_project_opened()
+
+    # ============================================= edit lock / read-only
+    def _begin_editing(self, project_id: str) -> Optional[bool]:
+        """Take project_id's edit lock. If another window or installation
+        holds it, ask. Returns read-only (True / False), or None on cancel
+        (nothing changed: the current project stays open)."""
+        self._read_only_holder = None
+        result = self.ws.acquire_lock(project_id)
+        if result.acquired:
+            return False
+        choice = self._ask_lock_choice(result.holder)
+        if choice == "cancel":
+            return None
+        if choice == "anyway":
+            self.ws.force_lock(project_id)
+            return False
+        self._read_only_holder = result.holder
+        return True
+
+    def _ask_lock_choice(self, holder) -> str:
+        """"read_only" (default), "anyway" or "cancel"."""
+        who = holder.describe() if holder is not None else "an unknown Pycrograph (unreadable lock)"
+        msg = QMessageBox(self)
+        msg.setIcon(QMessageBox.Warning)
+        msg.setWindowTitle("Project already open")
+        msg.setText(f"This project is being edited in another Pycrograph:\n{who}\n\n"
+                    "Editing it in both could lose changes.")
+        read_only = msg.addButton("Open read-only", QMessageBox.AcceptRole)
+        anyway = msg.addButton("Open anyway", QMessageBox.DestructiveRole)
+        msg.addButton(QMessageBox.Cancel)
+        msg.setDefaultButton(read_only)
+        msg.exec()
+        clicked = msg.clickedButton()
+        if clicked is read_only:
+            return "read_only"
+        if clicked is anyway:
+            return "anyway"
+        return "cancel"
+
+    def _is_read_only(self) -> bool:
+        return self.project is not None and self.project.project.id in self.ws.read_only_ids
+
+    def _set_read_only(self, project_id: str, read_only: bool) -> None:
+        if read_only:
+            self.ws.read_only_ids.add(project_id)
+        else:
+            self.ws.read_only_ids.discard(project_id)
+            self._read_only_holder = None
+        self._read_only_notice_shown = False
+        self._update_read_only_indicator()
+
+    def _update_read_only_indicator(self) -> None:
+        read_only = self._is_read_only()
+        if read_only:
+            holder = self._read_only_holder
+            who = f" ({holder.describe()})" if holder is not None else ""
+            self.read_only_banner.setText(
+                f"Read-only: this project is being edited in another Pycrograph{who}. "
+                "Changes are not saved; nothing can be imported or exported. "
+                "Reopen the project to edit it once the other window has closed it.")
+        self.read_only_banner.setVisible(read_only)
+        self._update_enabled()
+
+    def _notify_change_not_saved(self) -> None:
+        """Once per read-only opening: say that changes are not saved."""
+        if self._read_only_notice_shown:
+            return
+        self._read_only_notice_shown = True
+        text = "This project is open read-only: changes are not saved."
+        self.statusBar().showMessage(text, 10000)
+        QMessageBox.information(self, "Read-only", text)
+
+    def _refuse_if_read_only(self, action: str) -> bool:
+        """For actions that write (imports, exports, relinks…): True, after
+        saying so, if the current project is open read-only."""
+        if not self._is_read_only():
+            return False
+        QMessageBox.information(self, "Read-only",
+                                f"This project is open read-only, so you cannot {action}. "
+                                "Imports and exports are recorded in the project's log.")
+        return True
+
+    def _may_write(self) -> bool:
+        """False (with the matching notice) when a save must be skipped: the
+        project is open read-only, or our edit lock was taken over by another
+        window ("Open anyway"), which switches this one to read-only."""
+        if self._is_read_only():
+            self._notify_change_not_saved()
+            return False
+        pid = self.project.project.id
+        if pid in self.ws.held_locks and not self.ws.still_holds_lock(pid):
+            self.ws.held_locks.pop(pid, None)
+            self._read_only_holder = self.ws.locked_by_other(pid)
+            self._set_read_only(pid, True)
+            self._read_only_notice_shown = True                # this message says it
+            QMessageBox.warning(
+                self, "Project opened elsewhere",
+                "Another Pycrograph took over editing this project; your last change was "
+                "not saved.\n\nThis window is now read-only. Reopen the project to edit it again.")
+            return False
+        return True
 
     def archive_project(self) -> None:
         if self.project is None:
@@ -412,14 +551,25 @@ class MainWindow(QMainWindow):
                                 f"Archive “{self.project.project.name}”? It is hidden, not deleted, "
                                 "and can be restored from Open Project….") != QMessageBox.Yes:
             return
+        if self._refuse_if_read_only("archive it"):
+            return
         self.flush_pending()
         self.ws.set_project_archived(self.project, True)
         self._close_project()
         self._update_enabled()
         self.projects.refresh_requested()
 
-    def _close_project(self) -> None:
+    def _close_project(self, keep_lock: Optional[str] = None) -> None:
+        """Close the current project (pending gestures saved first) and
+        release its edit lock, unless it is keep_lock (being reopened)."""
+        old = self.project
         self.flush_pending()
+        if old is not None:
+            pid = old.project.id
+            self.ws.read_only_ids.discard(pid)
+            if pid != keep_lock:
+                self.ws.release_lock(pid)
+        self._read_only_holder = None
         self.hashq.cancel_all()
         self._close_source()
         self.project = None
@@ -431,6 +581,7 @@ class MainWindow(QMainWindow):
         self.library.set_project(None)
         self._rebuild_inspector()
         self._show_placeholder("No project open.")
+        self._update_read_only_indicator()
 
     def _after_project_opened(self) -> None:
         p = self.project
@@ -448,8 +599,14 @@ class MainWindow(QMainWindow):
             self._show_placeholder("Import images (Import Images…) into a dataset.")
 
     def save(self) -> None:
-        if self.project is not None:
+        """The single save gate (every gesture, import, export…): skipped in
+        read-only mode, or when the edit lock was lost (see _may_write)."""
+        if self.project is None or not self._may_write():
+            return
+        try:
             self.ws.save_project(self.project)
+        except (ProjectReadOnlyError, ProjectFormatError) as exc:
+            QMessageBox.warning(self, "Project not saved", str(exc))
 
     def save_prefs(self) -> None:
         save_preferences(self.ws.root, self.prefs)
@@ -484,7 +641,7 @@ class MainWindow(QMainWindow):
         """Archive the open project; one log entry, then save. Returns the
         ArchiveResult, or None (refused / cancelled, nothing written)."""
         from ..archive import ArchiveCancelled, ArchiveError, export_archive
-        if self.project is None:
+        if self.project is None or self._refuse_if_read_only("export an archive of it"):
             return None
         self.flush_pending()
         self.figures_tab.flush()
@@ -507,7 +664,7 @@ class MainWindow(QMainWindow):
         return result
 
     def export_archive_dialog(self) -> None:
-        if self.project is None:
+        if self.project is None or self._refuse_if_read_only("export an archive of it"):
             return
         from .archive_dialog import ArchiveDialog
         dlg = ArchiveDialog(self)
@@ -551,9 +708,15 @@ class MainWindow(QMainWindow):
         if self.project is not None and self.project.project.id == project_id:
             if archived:
                 self.archive_project()
-            else:
+            elif not self._refuse_if_read_only("restore it"):
                 self.ws.set_project_archived(self.project, False)
             self.projects.refresh_requested()
+            return
+        holder = self.ws.locked_by_other(project_id)
+        if holder is not None:
+            QMessageBox.information(self, "Archive project",
+                                    "This project is being edited in another Pycrograph "
+                                    f"({holder.describe()}); it was not changed.")
             return
         try:
             other = self.ws.load_project(project_id)
@@ -628,7 +791,7 @@ class MainWindow(QMainWindow):
     # ============================================================== import
     def import_images(self, dataset_id: Optional[str] = None, paths: Optional[list[str]] = None) -> list[str]:
         """Register files by reference. Returns registered image ids."""
-        if self.project is None:
+        if self.project is None or self._refuse_if_read_only("import images into it"):
             return []
         if paths is None:
             paths, _ = QFileDialog.getOpenFileNames(self, "Import images (by reference)", "",
@@ -700,6 +863,11 @@ class MainWindow(QMainWindow):
         ref = p.images.get(image_id) if p else None
         if ref is None or str(self.ws.resolve_image_path(p, ref)) != path:
             return                                   # project switched or image relinked meanwhile
+        if self._is_read_only():                     # shown, never logged or saved
+            expected = expected_sha256(ref)
+            modified = expected is not None and digest != expected
+            self._set_status(image_id, (RefStatus.MODIFIED if modified else RefStatus.OK).value)
+            return
         self.flush_pending()
         if ref.sha256 is None:
             set_image_hash(p, image_id, digest, size, mtime_ns)
@@ -791,6 +959,8 @@ class MainWindow(QMainWindow):
             self.library.refresh()
 
     def relink(self, image_id: str) -> None:
+        if self._refuse_if_read_only("relink its images"):
+            return
         p = self.project
         ref = p.images[image_id]
         old_path = ref.path
@@ -838,6 +1008,8 @@ class MainWindow(QMainWindow):
             self._on_image_selected(image_id)
 
     def copy_into(self, image_id: str) -> None:
+        if self._refuse_if_read_only("copy images into it"):
+            return
         self.flush_pending()
         QApplication.setOverrideCursor(Qt.WaitCursor)
         try:
@@ -978,6 +1150,9 @@ class MainWindow(QMainWindow):
         if self.project is None or ref is None:
             return
         axis = self.plane_axis_combo.itemData(index)
+        if self._refuse_if_read_only("change how its planes are read"):
+            self._sync_plane_axis_control()
+            return
         self.flush_pending()
         try:
             changed = set_plane_axis(self.ws, self.project, ref, axis)
@@ -1135,7 +1310,7 @@ class MainWindow(QMainWindow):
 
     # =========================================================== exports
     def export_integrity(self) -> None:
-        if self.project is None:
+        if self.project is None or self._refuse_if_read_only("export an integrity report"):
             return
         self.flush_pending()
         default = str(Path.home() / f"{self.project.project.name}_integrity.json")
@@ -1169,4 +1344,5 @@ class MainWindow(QMainWindow):
         self.hashq.cancel_all()
         self._close_source()
         self.renderer.close()
+        self.ws.release_all_locks()
         super().closeEvent(event)

@@ -69,6 +69,11 @@ Issues = "https://github.com/TheBrickalista/Pycrograph/issues"
 [project.scripts]
 pycrograph = "pycrograph.main:main"
 
+# Pyblication plugin (protocol v1): metadata only, Pycrograph never imports
+# Pyblication (pycrograph/plugin.py, docs/concepts/pyblication-plugin.md).
+[project.entry-points."pyblication.plugins"]
+pycrograph = "pycrograph.plugin:describe"
+
 [tool.setuptools]
 packages = ["pycrograph", "pycrograph.readers", "pycrograph.ui", "pycrograph.resources"]
 

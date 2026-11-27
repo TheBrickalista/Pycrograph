@@ -17,7 +17,7 @@ hash-chained operation log, and a PySide6 `QGraphicsView` UI.
 
 | Module | Role |
 |---|---|
-| `models.py` | `Project › Dataset › ImageRef`, `ChannelSettings`, `ImageDisplay`, `Figure` (`PageSetup`, `legend`), `Panel` (`PanelBorder`, `InsetStyle`, `Shape`), `OperationLogEntry`. `PROJECT_FORMAT_VERSION = 4` (older projects migrated on load, `migrations.py`) |
+| `models.py` | `Project › Dataset › ImageRef`, `ChannelSettings`, `ImageDisplay`, `Figure` (`PageSetup`, `legend`), `Panel` (`PanelBorder`, `InsetStyle`, `Shape`), `OperationLogEntry`. `PROJECT_FORMAT_VERSION = 5` (older projects migrated on load, `migrations.py`) |
 | `migrations.py` | Raw-dict migrations of `project.json` applied before validation (1 → 2: `Figure.page` `PagePreset` → `PageSetup`) |
 | `figures.py` | Figure editing without Qt: create/rename figures, panels from library images (copy of display settings), move/resize/delete, `FigureEditor` gestures with snapshot undo/redo |
 | `viewport.py` | Viewport = crop (pure geometry): uniform scale, zoom % (100 % = whole image fitted), pan, resize at constant scale, rotation about the crop centre, orientation mapping, where the image sits in its panel |
@@ -35,11 +35,14 @@ hash-chained operation log, and a PySide6 `QGraphicsView` UI.
 | `render.py` | `PanelRenderer`: raw plane(s) or max projection → crop by array slicing → `render_composite` → orientation; LRU cache keyed by source hash + settings |
 | `readers/` | `ImageSource` interface (T, Z, C, Y, X; lazy `get_plane`); `open_image_ref` (original or light-archive extract, `extract.py`). `tiff.py`: plain TIFF, MetaMorph TIFF (XML), MetaMorph STK (UIC tags), T vs Z of a generic plane axis. `metamorph.py`: metadata parsing |
 | `display.py` | window → gamma → invert → LUT → additive composite → RGB8; orientation; saturation; auto-window |
-| `storage.py` | `Workspace` (atomic saves), import **by reference**, SHA-256, `check_image`, relink (single + drive-prefix), copy into project, annotations, thumbnails |
+| `storage.py` | `Workspace` (atomic saves; refuses read-only projects and newer on-disk formats; edit locks), import **by reference**, SHA-256, `check_image`, relink (single + drive-prefix), copy into project, annotations, thumbnails |
+| `paths.py` | `default_workspace()` (`~/.pycrograph`, `PYCROGRAPH_WORKSPACE`); standard library only |
+| `project_lock.py` | Advisory per-project edit lock `projects/<id>/.lock` (atomic create, token, stale takeover, local-time display) — **shared-core** (from PysternBlot) |
+| `plugin.py` | Pyblication plugin, protocol v1 (`describe`, `identify`, `open_project`); no Qt, read-only — **shared-core** (adapted from PysternBlot) |
 | `logchain.py` | Hash-chained log — **shared-core** (verbatim from PysternBlot) |
 | `jsonsafe.py` | Strict JSON — **shared-core** (verbatim) |
 | `integrity.py` | Integrity report (JSON + HTML, exports re-checked) — **shared-core** (adapted) |
-| `ui/main_window.py` | Tabs Home · Projects · Library · Figures · Preferences · About (opens on Home). Library tab = tree (left) · viewer (centre) · inspector (right); gesture commit |
+| `ui/main_window.py` | Tabs Home · Projects · Library · Figures · Preferences · About (opens on Home). Library tab = tree (left) · viewer (centre) · inspector (right); gesture commit; edit lock and read-only mode (`save()` is the single gate) |
 | `ui/home_tab.py` | Start page (PysternBlot style): logo, version, licence, big buttons to the entry points; emits intents only |
 | `ui/projects_tab.py` | Project list (new / open / archive / restore), figures of the open project |
 | `ui/figures_tab.py`, `ui/figure_canvas.py` | Figure selector, page canvas in mm at journal width, panel items (select, rubber band, move, resize handle), undo/redo, live-gesture commit, Preview · Info inspector |
@@ -198,6 +201,50 @@ Provenance of restored light extracts: `provenance.extract_block` (export
 sidecar, source-data sidecar, PDF info page, integrity report) says the
 original is not present, gives the extract's own SHA-256 (the one verified)
 and the original's as recorded only; the consistency check adds an info item.
+
+## Pyblication plugin and edit locks
+
+`plugin.py` implements Pyblication's plugin protocol v1 (Pyblication's
+`docs/plugin-protocol.md`; user-facing: `docs/concepts/pyblication-plugin.md`),
+registered as the `pyblication.plugins` entry point `pycrograph`. Pycrograph
+never imports Pyblication. Rules:
+
+- **No Qt in the plugin's import chain.** It imports the standard library,
+  `paths.py` and, lazily, `models` / `migrations` / `logchain` (pydantic only);
+  never `storage`, `export` (QPdfWriter), `provenance` (imports `render`) or
+  `ui`. project.json is read as raw JSON. A subprocess test checks that PySide6
+  stays out of `sys.modules`.
+- **Read-only.** `identify` hashes the export, finds the `export.figure` entry
+  listing it (`new_value.files[*].sha256`), and reports project.json, the
+  sidecar (if its hash matches the log) and the raw images, taken from the
+  sidecar's panel records (fallback: the figure's current panels), each
+  resolved like `Workspace.resolve_image_path`. It ignores edit locks.
+- `open_project` runs `sys.executable -m pycrograph --project <id>` in a new
+  session, with `PYCROGRAPH_WORKSPACE` inferred from the project path.
+- The export's log entry is saved before the window reports "Exported"
+  (`tests/test_pyblication_ui.py`).
+
+`project_lock.py` (from PysternBlot) is the per-project edit lock for
+several windows or installations on one workspace. `Workspace` keeps
+`held_locks` (id → token) and `read_only_ids`. `save_project` refuses a
+read-only id (`ProjectReadOnlyError`) and a project.json whose on-disk format
+is newer (`ProjectFormatTooNewError`, also raised on load) or that cannot
+be read as a project (`ProjectFormatError`). The check decodes only the
+leading `"project"` object when it fits in the first 8 KB, and parses the
+whole file otherwise. `MainWindow`
+takes the lock in `open_project_by_id` (read-only / open anyway / cancel),
+releases it in `_close_project` and `closeEvent`, and gates every save in
+`save()`: skipped when read-only, and the token is re-checked so a window
+whose lock was taken over turns read-only. Imports and exports refuse up front
+in read-only mode. Releasing a lock removes the project folder with
+`os.rmdir` only, if nothing else is left in it. The lock is never read by
+the plugin or archived.
+
+`list_projects` also lists projects written by a newer Pycrograph, from
+their raw JSON (`needs_newer_app`); opening one is refused.
+`tests/test_format_version_guard.py` records a fingerprint of the `Project`
+schema per `PROJECT_FORMAT_VERSION`, so a schema change without a version
+bump (and migration) fails.
 
 ## Release pipeline
 

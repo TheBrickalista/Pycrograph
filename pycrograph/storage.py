@@ -31,6 +31,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import shutil
 import tempfile
 import uuid
@@ -41,7 +42,7 @@ from typing import Any, Callable, Optional
 
 import numpy as np
 
-from . import __version__
+from . import __version__, project_lock
 from .display import default_channel_settings
 from .jsonsafe import dumps_strict, finite_or_none
 from .logchain import append_log_entry
@@ -110,12 +111,120 @@ class ProjectFormatError(ValueError):
     pass
 
 
+class ProjectFormatTooNewError(ProjectFormatError):
+    """project.json was written by a newer Pycrograph (format_version above
+    PROJECT_FORMAT_VERSION): never read as this version's model, never saved over."""
+
+
+class ProjectReadOnlyError(RuntimeError):
+    """A save was refused: the project is open read-only in this window."""
+
+
+def needs_newer_app(meta: ProjectMeta) -> bool:
+    """True for a listed project written by a newer Pycrograph (shown, not opened)."""
+    return meta.format_version > PROJECT_FORMAT_VERSION
+
+
+def _raw_format_version(data: Any) -> int:
+    try:
+        return int(data["project"].get("format_version", 1))
+    except (AttributeError, KeyError, TypeError, ValueError):
+        return 1
+
+
+_HEAD_BYTES = 8192
+_PROJECT_FIRST = re.compile(r'\s*\{\s*"project"\s*:\s*')
+
+
+def _unreadable(path: Path, why: str) -> ProjectFormatError:
+    return ProjectFormatError(
+        f"{path}: the project file on disk cannot be read ({why}). It was not saved over, "
+        "so that nothing in it is lost. Move it aside or restore it, then save again.")
+
+
+def _meta_format_version(meta: Any, path: Path) -> int:
+    """format_version of a "project" block, as load_project_file reads it
+    (absent: format 1); anything else is refused, never guessed."""
+    if not isinstance(meta, dict):
+        raise _unreadable(path, 'no "project" object')
+    version = meta.get("format_version", 1)
+    if isinstance(version, bool) or not isinstance(version, int):
+        raise _unreadable(path, f"format_version is {version!r}")
+    return version
+
+
+def _on_disk_format_version(path: Path) -> Optional[int]:
+    """format_version of the project.json about to be saved over; None only
+    if there is no file. Raises ProjectFormatError when the file exists but
+    cannot be read as a project, so a save never overwrites what it could
+    not check.
+
+    Fast path, run before every save: when the file starts with the
+    "project" object (as save_project writes it) and that object ends within
+    the first 8 KB, only it is decoded. Otherwise (other key order, a large
+    field before format_version) the whole file is parsed."""
+    try:
+        with open(path, "rb") as f:
+            head = f.read(_HEAD_BYTES)
+    except FileNotFoundError:
+        return None
+    except OSError as exc:
+        raise _unreadable(path, str(exc)) from exc
+    text = head.decode("utf-8", errors="ignore")   # a cut multi-byte char is at the end
+    m = _PROJECT_FIRST.match(text)
+    if m:
+        try:
+            meta, _end = json.JSONDecoder().raw_decode(text, m.end())
+        except ValueError:
+            meta = None                            # the object runs past the head
+        if isinstance(meta, dict):
+            return _meta_format_version(meta, path)
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return None
+    except (OSError, UnicodeDecodeError, ValueError) as exc:
+        raise _unreadable(path, f"not valid JSON: {exc}") from exc
+    if not isinstance(data, dict):
+        raise _unreadable(path, "not a JSON object")
+    return _meta_format_version(data.get("project"), path)
+
+
+def _newer_meta(path: Path) -> Optional[ProjectMeta]:
+    """The listing row of a project written by a newer Pycrograph, read from
+    the raw JSON (its model may not validate here); None if it isn't one."""
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        meta = data["project"]
+        version = _raw_format_version(data)
+    except (OSError, UnicodeDecodeError, ValueError, KeyError, TypeError):
+        return None
+    if not isinstance(meta, dict) or version <= PROJECT_FORMAT_VERSION:
+        return None
+    name = meta.get("name")
+
+    def text(key: str) -> str:
+        v = meta.get(key)
+        return v if isinstance(v, str) else ""
+    return ProjectMeta(
+        id=path.parent.name,
+        name=name if isinstance(name, str) and name.strip() else path.parent.name,
+        created_utc=text("created_utc"), modified_utc=text("modified_utc") or None,
+        app_version=text("app_version"), format_version=version,
+        is_archived=meta.get("is_archived") is True,
+    )
+
+
 class Workspace:
     def __init__(self, root: str | Path):
         self.root = Path(root).expanduser()
         self.projects_dir = self.root / "projects"
         self.cache_dir = self.root / "cache"
         self.thumbnails_dir = self.cache_dir / "thumbnails"
+        # Projects open read-only in this window: save_project refuses them.
+        self.read_only_ids: set[str] = set()
+        # Edit locks this process holds (project_lock.py): project id -> token.
+        self.held_locks: dict[str, str] = {}
 
     def ensure(self) -> None:
         for d in (self.projects_dir, self.thumbnails_dir):
@@ -151,12 +260,26 @@ class Workspace:
         return project
 
     def save_project(self, project: Project) -> Path:
-        """Atomic write: temp file in the same directory, then os.replace."""
+        """Atomic write: temp file in the same directory, then os.replace.
+
+        Refused (nothing written) for a project open read-only in this window
+        (ProjectReadOnlyError), over a project.json written meanwhile by a
+        newer Pycrograph (ProjectFormatTooNewError), e.g. after "Open anyway",
+        and over one that cannot be read as a project (ProjectFormatError):
+        its format is never guessed."""
+        if project.project.id in self.read_only_ids:
+            raise ProjectReadOnlyError(
+                f"Project “{project.project.name}” is open read-only; it was not saved.")
+        d = self.project_dir(project.project.id)
+        target = d / "project.json"
+        on_disk = _on_disk_format_version(target)
+        if on_disk is not None and on_disk > PROJECT_FORMAT_VERSION:
+            raise ProjectFormatTooNewError(
+                f"{target}: project format {on_disk} was written by a newer Pycrograph "
+                f"(this one writes {PROJECT_FORMAT_VERSION}); not saved over it.")
         project.project.modified_utc = utc_now()
         project.project.app_version = __version__
-        d = self.project_dir(project.project.id)
         d.mkdir(parents=True, exist_ok=True)
-        target = d / "project.json"
         text = dumps_strict(project.model_dump(mode="json"), indent=2, ensure_ascii=False)
         fd, tmp = tempfile.mkstemp(prefix=".project.", suffix=".json", dir=d)
         try:
@@ -174,12 +297,19 @@ class Workspace:
         return load_project_file(self.project_json(project_id))
 
     def list_projects(self, include_archived: bool = False) -> list[ProjectMeta]:
+        """Every readable project, most recently modified first. A project
+        written by a newer Pycrograph is listed too, from its raw JSON
+        (needs_newer_app(meta)); opening it is refused."""
         out = []
         if not self.projects_dir.is_dir():
             return out
         for p in sorted(self.projects_dir.glob("*/project.json")):
             try:
                 meta = load_project_file(p).project
+            except ProjectFormatTooNewError:
+                meta = _newer_meta(p)
+                if meta is None:
+                    continue
             except (ValueError, OSError):
                 continue
             if include_archived or not meta.is_archived:
@@ -195,6 +325,55 @@ class Workspace:
                       target_type="project", target_id=project.project.id,
                       field="project.is_archived", old_value=old, new_value=bool(archived))
         self.save_project(project)
+
+    # ---- edit locks (project_lock.py); reading never needs one ----------
+    def acquire_lock(self, project_id: str) -> project_lock.LockResult:
+        result = project_lock.acquire(self.project_dir(project_id),
+                                      frozenset(self.held_locks.values()))
+        if result.acquired:
+            self.held_locks[project_id] = result.token
+        return result
+
+    def force_lock(self, project_id: str) -> str:
+        """"Open anyway": replace whatever lock is there with ours."""
+        token = project_lock.force(self.project_dir(project_id))
+        self.held_locks[project_id] = token
+        return token
+
+    def release_lock(self, project_id: str) -> None:
+        token = self.held_locks.pop(project_id, None)
+        project_dir = self.project_dir(project_id)
+        if project_lock.release(project_dir, token):
+            # A folder left holding nothing but our lock is removed, so it
+            # does not look like a project. os.rmdir only, never rmtree: it
+            # fails (ignored) as soon as any file or folder is left in it.
+            try:
+                project_dir.rmdir()
+            except OSError:
+                pass
+
+    def release_all_locks(self) -> None:
+        for project_id in list(self.held_locks):
+            self.release_lock(project_id)
+
+    def still_holds_lock(self, project_id: str) -> bool:
+        token = self.held_locks.get(project_id)
+        return bool(token) and project_lock.still_ours(self.project_dir(project_id), token)
+
+    def locked_by_other(self, project_id: str) -> Optional[project_lock.LockInfo]:
+        """The live holder of another process's or window's lock on this
+        project, else None (no lock, our own, or a stale one). An unreadable
+        lock is reported as held, by an unknown holder."""
+        path = project_lock.lock_path(self.project_dir(project_id))
+        if not path.exists():
+            return None
+        holder = project_lock.LockInfo.from_file(path)
+        own = frozenset(self.held_locks.values())
+        if holder is None:
+            return project_lock.LockInfo("unknown host", 0, "", "", "unknown time")
+        if holder.token in own or project_lock.is_stale(holder, own):
+            return None
+        return holder
 
 
 def load_project_file(path: str | Path) -> Project:
@@ -212,7 +391,7 @@ def load_project_file(path: str | Path) -> Project:
         raise ProjectFormatError(f"{path}: not a Pycrograph project")
     version = int(data["project"].get("format_version", 1))
     if version > PROJECT_FORMAT_VERSION:
-        raise ProjectFormatError(
+        raise ProjectFormatTooNewError(
             f"{path}: project format {version} is newer than this "
             f"Pycrograph ({PROJECT_FORMAT_VERSION}); please update the app."
         )

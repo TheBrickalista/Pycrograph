@@ -533,6 +533,9 @@ class FiguresTab(QWidget):
     # of the Library, and its import flow (dataset id -> imported image ids).
     library_state: Optional[Callable[[], tuple[dict, dict]]] = None
     import_handler: Optional[Callable[[str], list[str]]] = None
+    # Set by the main window: True while the project is open read-only
+    # (another window holds its edit lock); exports are then refused.
+    is_read_only: Callable[[], bool] = staticmethod(lambda: False)
 
     def make_add_images_dialog(self):
         from .add_images_dialog import AddImagesDialog
@@ -1311,7 +1314,7 @@ class FiguresTab(QWidget):
         (default: the dialog's "Export anyway") decides; the warnings are then
         logged with the export. Missing / modified sources refuse."""
         fig = self.current_figure()
-        if fig is None or self.workspace is None:
+        if fig is None or self.workspace is None or self._refuse_export_read_only():
             return None
         issues = self.check_consistency()
         if issues:
@@ -1337,9 +1340,19 @@ class FiguresTab(QWidget):
                                  + (f" — {'; '.join(result.warnings)}" if result.warnings else ""))
         return result
 
+    def _refuse_export_read_only(self) -> bool:
+        """True, after saying so, when the project is open read-only: an
+        export is recorded in the project's log, which cannot be saved."""
+        if not self.is_read_only():
+            return False
+        QMessageBox.information(self, "Read-only",
+                                "This project is open read-only, so you cannot export from it. "
+                                "Exports are recorded in the project's log.")
+        return True
+
     def export_figure_dialog(self) -> None:
         fig = self.current_figure()
-        if fig is None:
+        if fig is None or self._refuse_export_read_only():
             return
         from PySide6.QtWidgets import QFileDialog
         from .export_dialogs import ExportDialog
@@ -1357,7 +1370,7 @@ class FiguresTab(QWidget):
                        ) -> Optional["X.ExportResult"]:
         """Selected panels (all when none is selected) as OME-TIFF."""
         fig = self.current_figure()
-        if fig is None or self.workspace is None:
+        if fig is None or self.workspace is None or self._refuse_export_read_only():
             return None
         ids = panel_ids or [p.id for p in self.selected_panels()] or [p.id for p in fig.panels]
         self._before_gesture()
@@ -1372,6 +1385,8 @@ class FiguresTab(QWidget):
         return result
 
     def export_sources_dialog(self) -> None:
+        if self._refuse_export_read_only():
+            return
         from PySide6.QtWidgets import QFileDialog
         d = QFileDialog.getExistingDirectory(self, "Export source data to")
         if d:
